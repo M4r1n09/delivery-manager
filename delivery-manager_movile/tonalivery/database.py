@@ -371,12 +371,15 @@ class DatabaseManager:
             cursor = self.connection.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
                 """
-                SELECT r.id, r.name, r.description, r.status, 
-                       u.name as assigned_worker_name, u.username as assigned_worker_username
+                SELECT r.id, r.name, r.description, r.status, r.bags,
+                    u.name AS assigned_worker_name, u.username AS assigned_worker_username,
+                    c.name AS customer_name, c.email AS customer_email
                 FROM routes r
                 LEFT JOIN users u ON r.assigned_worker_id = u.id
+                LEFT JOIN route_customers rc ON r.id = rc.route_id
+                LEFT JOIN customers c ON rc.customer_id = c.id
                 WHERE r.status = 'pending' OR r.status = 'in_progress'
-                ORDER BY r.name
+                ORDER BY r.name;
             """
             )
             return [dict(row) for row in cursor.fetchall()]
@@ -393,6 +396,21 @@ class DatabaseManager:
                 f"""
                 SELECT name, description, assigned_worker_id, status
                     FROM routes WHERE id = '{route_id}';
+            """
+            )
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"❌ Error obteniendo ruta: {e}")
+            return []
+
+    def get_route_customer_by_id(self, route_id: uuid):
+        """Obtiene todas las rutas activas"""
+        print(f"route_customer: {route_id}")
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                f"""
+                SELECT customer_id FROM route_customers WHERE route_id = '{route_id}';
             """
             )
             return cursor.fetchall()

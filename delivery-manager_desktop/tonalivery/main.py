@@ -54,7 +54,7 @@ class LoginView:
                     ),
                     ft.Container(height=20),
                     ft.Text(
-                        "Demo: admin/admin123 o worker1/worker123",
+                        "Demo: admin/admin123",
                         size=12,
                         color=ft.Colors.GREY,
                     ),
@@ -70,11 +70,6 @@ class WorkerDashboard:
     def __init__(self, page: ft.Page, user: Dict, on_logout):
         self.page = page
         self.user = user
-        # Solicitar permisos de cámara y habilitar acceso a la cámara
-        if hasattr(self.page, "request_permissions"):
-            self.page.request_permissions(["camera"])
-        if hasattr(self.page, "CAMERA"):
-            self.page.CAMERA = True  # Habilitar acceso a la cámara
         self.on_logout = on_logout
         self.current_view = "routes"
         # Variable para almacenar el route_id actual
@@ -1462,13 +1457,20 @@ class AdminDashboard:
 
         def save_route(e):
             if name_field.value and description_field.value:
+                print("🔄 Guardando nueva ruta...")
+                print(
+                    bags_to_deliver_field.value,
+                    "<<< bags to deliver",
+                    type(bags_to_deliver_field.value),
+                )
                 success = db_manager.add_route(
                     sequence_route=sequence_route.value,
                     name=name_field.value,
+                    description=description_field.value,
+                    bag=bags_to_deliver_field.value,
                     customer=customer_assign_field.value,
                     worker_assign=worker_assign_field.value,
                     status=status_field.value,
-                    description=description_field.value,
                 )
 
                 dialog.open = False
@@ -1499,6 +1501,12 @@ class AdminDashboard:
         name_field = ft.TextField(label="Nombre de la ruta", width=300)
         description_field = ft.TextField(
             label="Descripción", width=300, multiline=True, min_lines=2, max_lines=5
+        )
+        bags_to_deliver_field = ft.TextField(
+            label="Número de bolsas a entregar",
+            width=300,
+            keyboard_type=ft.KeyboardType.NUMBER,
+            value=0,
         )
         customer_assign_field = ft.Dropdown(
             label="Asignar a Cliente",
@@ -1534,6 +1542,7 @@ class AdminDashboard:
                     sequence_route,
                     name_field,
                     description_field,
+                    bags_to_deliver_field,
                     customer_assign_field,
                     worker_assign_field,
                     status_field,
