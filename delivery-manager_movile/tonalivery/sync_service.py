@@ -9,7 +9,9 @@ from datetime import datetime, timedelta
 from database_mobile_simplified import db_manager
 
 # URL de tu middleware
-MIDDLEWARE_URL = os.getenv("MIDDLEWARE_URL", "http://localhost:9000")
+MIDDLEWARE_URL = os.getenv(
+    "MIDDLEWARE_URL", "http://localhost:6789"
+)  # "http://18.117.83.152:6789"
 
 # Archivo para guardar la ultima sincronizacion
 SYNC_TIMESTAMP_FILE = "last_sync.json"
@@ -47,6 +49,16 @@ def sync_all_data() -> dict:
     results = {"success": False, "errors": [], "synced": []}
 
     try:
+        # 0. Sincronizar Users
+        resp = httpx.get(f"{MIDDLEWARE_URL}/users", timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("success"):
+                db_manager.users = data["data"]
+                results["synced"].append(f"users: {len(data['data'])}")
+        else:
+            results["errors"].append(f"users: HTTP {resp.status_code}")
+
         # 1. Sincronizar Workers
         resp = httpx.get(f"{MIDDLEWARE_URL}/workers", timeout=15)
         if resp.status_code == 200:
@@ -57,17 +69,7 @@ def sync_all_data() -> dict:
         else:
             results["errors"].append(f"Workers: HTTP {resp.status_code}")
 
-        # 2. Sincronizar Rutas
-        resp = httpx.get(f"{MIDDLEWARE_URL}/routes", timeout=15)
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("success"):
-                db_manager.routes = data["data"]
-                results["synced"].append(f"Rutas: {len(data['data'])}")
-        else:
-            results["errors"].append(f"Rutas: HTTP {resp.status_code}")
-
-        # 3. Sincronizar Clientes
+        # 2. Sincronizar Clientes
         resp = httpx.get(f"{MIDDLEWARE_URL}/customers", timeout=15)
         if resp.status_code == 200:
             data = resp.json()
@@ -77,11 +79,23 @@ def sync_all_data() -> dict:
                 results["synced"].append(f"Clientes: {len(data['data'])}")
         else:
             results["errors"].append(f"Clientes: HTTP {resp.status_code}")
+
+        # 3. Sincronizar Rutas
+        resp = httpx.get(f"{MIDDLEWARE_URL}/routes", timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("success"):
+                db_manager.routes = data["data"]
+                results["synced"].append(f"Rutas: {len(data['data'])}")
+        else:
+            results["errors"].append(f"Rutas: HTTP {resp.status_code}")
+
         # 4. Sincronizar Camiones
         resp = httpx.get(f"{MIDDLEWARE_URL}/trucks", timeout=15)
         if resp.status_code == 200:
             data = resp.json()
             if data.get("success"):
+                print(f"Camiones: {data['data']}")
                 db_manager.trucks = data["data"]
                 results["synced"].append(f"Camiones: {len(data['data'])}")
         else:

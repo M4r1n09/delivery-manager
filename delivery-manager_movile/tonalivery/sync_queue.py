@@ -9,7 +9,9 @@ from datetime import datetime
 
 QUEUE_FILE = "pending_operations.json"
 SYNC_STATE_FILE = "sync_state.json"
-MIDDLEWARE_URL = os.getenv("MIDDLEWARE_URL", "http://tu-servidor:8000")
+MIDDLEWARE_URL = os.getenv(
+    "MIDDLEWARE_URL", "http://localhost:6789"
+)  # "http://18.117.83.152:6789"
 MAX_AUTO_RETRIES = 2
 
 
@@ -124,8 +126,8 @@ def flush_queue(is_manual: bool = False) -> dict:
         state["auto_retries_done"] += 1
         if state["auto_retries_done"] >= MAX_AUTO_RETRIES:
             state["manual_required"] = True
-    elif len(remaining) == 0:
-        # Todo enviado, resetear
+    else:
+        # Todo enviado O fue envío manual, resetear completamente
         state = {"auto_retries_done": 0, "manual_required": False}
 
     _save_sync_state(state)

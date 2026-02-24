@@ -1,7 +1,6 @@
 import flet as ft
 import os
 import sys
-from dotenv import load_dotenv
 import threading
 from sync_service import sync_all_data, sync_if_needed
 from sync_queue import add_to_queue
@@ -9,8 +8,6 @@ from sync_queue import flush_queue, get_pending_count, is_manual_required
 from database_mobile_simplified import db_manager
 from typing import Dict, List, Optional
 from datetime import datetime
-
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 
 class LoginView:
@@ -136,7 +133,8 @@ class WorkerDashboard:
     def get_assigned_truck(self):
         """Check if worker has an assigned truck"""
         try:
-            truck_info = db_manager.get_worker_truck(self.user["id"])
+            print(self.user)
+            truck_info = db_manager.get_worker_truck(self.user["username"])
             return truck_info if truck_info else None
         except:
             return None
@@ -243,7 +241,6 @@ class WorkerDashboard:
         route_cards = []
         # print("Rutas obtenidas:", routes)
         for route in self.routes:
-            # customers = db_manager.get_route_customers()
             print(f"route: {route}")
             card = ft.Card(
                 content=ft.Container(
@@ -256,10 +253,13 @@ class WorkerDashboard:
                                         f"Ruta para {route['customer_name']}",
                                         size=18,
                                         weight=ft.FontWeight.BOLD,
+                                        overflow=ft.TextOverflow.ELLIPSIS,
                                     ),
                                     ft.Container(expand=True),
                                     ft.Chip(
-                                        label=ft.Text(route["status"]),
+                                        label=ft.Text(
+                                            route["status"],
+                                        ),
                                         bgcolor=(
                                             ft.Colors.GREEN_100
                                             if route["status"] == "completed"
@@ -278,7 +278,7 @@ class WorkerDashboard:
                                         color=ft.Colors.GREY_600,
                                     ),
                                     ft.Text(
-                                        f" clientes",  # {len(customers)}
+                                        f" clientes",
                                         color=ft.Colors.GREY_600,
                                     ),
                                     ft.Container(width=20),
@@ -304,7 +304,7 @@ class WorkerDashboard:
                                             style=ft.ButtonStyle(
                                                 bgcolor=ft.Colors.BLUE_100
                                             ),
-                                            disabled=True,  # REVISAR False
+                                            disabled=True,
                                         ),
                                         ft.Container(width=8),
                                         ft.ElevatedButton(
@@ -474,12 +474,12 @@ class WorkerDashboard:
                                         ft.Column(
                                             [
                                                 ft.Text(
-                                                    f"Camión #{truck.get('truck_number', 'N/A')}",
+                                                    f"Camión #{truck.get('license_plate', 'N/A')}",
                                                     size=20,
                                                     weight=ft.FontWeight.BOLD,
                                                 ),
                                                 ft.Text(
-                                                    f"Placa: {truck.get('license_plate', 'N/A')}",
+                                                    f"Marca: {truck.get('brand', 'N/A')}",
                                                     color=ft.Colors.GREY_600,
                                                 ),
                                                 ft.Text(
@@ -496,13 +496,13 @@ class WorkerDashboard:
                                     [
                                         self.create_truck_info_card(
                                             "Capacidad",
-                                            f"{truck.get('capacity', 0)} kg",
+                                            f"{truck.get('capacity_kg', 0)} kg",
                                             ft.Icons.SCALE,
                                             ft.Colors.BLUE,
                                         ),
                                         self.create_truck_info_card(
                                             "Combustible",
-                                            f"{truck.get('fuel_level', 0)}%",
+                                            f"{truck.get('fuel_level', '--')}%",
                                             ft.Icons.LOCAL_GAS_STATION,
                                             ft.Colors.ORANGE,
                                         ),
@@ -513,11 +513,15 @@ class WorkerDashboard:
                                     [
                                         self.create_truck_info_card(
                                             "Estado",
-                                            truck.get("status", "Desconocido"),
+                                            self._trasnlate_status(
+                                                status_search=truck.get(
+                                                    "status", "Desconocido"
+                                                )
+                                            ),
                                             ft.Icons.INFO,
                                             (
                                                 ft.Colors.GREEN
-                                                if truck.get("status") == "Operativo"
+                                                if truck.get("status") == "in_use"
                                                 else ft.Colors.RED
                                             ),
                                         ),
@@ -537,6 +541,10 @@ class WorkerDashboard:
                 ),
             ],
         )
+
+    def _trasnlate_status(self, status_search):
+        status = {"in_use": "Operando", "maintenance": "En Mantenimiento"}
+        return status[status_search]
 
     def create_truck_info_card(self, title, value, icon, color):
         return ft.Container(
@@ -680,7 +688,7 @@ class WorkerDashboard:
                     )
                     for i, step in enumerate(steps)
                 ],
-                ft.Container(height=20),
+                ft.Container(height=10),
                 # Agregar los campos de texto según el paso actual
                 self.comentarios_refrigerador,
                 self.comentarios_limpieza,
@@ -692,7 +700,7 @@ class WorkerDashboard:
                     width=200,
                     style=ft.ButtonStyle(bgcolor=ft.Colors.BLUE),
                 ),
-                ft.Container(height=16),
+                ft.Container(height=50),
             ],
             scroll=ft.ScrollMode.AUTO,
         )
@@ -762,6 +770,11 @@ class WorkerDashboard:
         # Solo local
         db_manager.sales.append(sale_payload)
         add_to_queue("POST", "/sales", sale_payload)
+        add_to_queue(
+            "PUT",
+            f"/routes/{self.current_route_id}",
+            {"status": sale_payload.get("status", "pending")},
+        )
 
         snack = ft.SnackBar(
             content=ft.Text("Entrega guardada"), bgcolor=ft.Colors.GREEN
@@ -808,13 +821,13 @@ class WorkerDashboard:
             snack.open = False
 
             if result["pending"] == 0:
-                msg = f"Todos los datos subidos ({result['sent']} registros)"
+                msg = f"✅ Todos los datos subidos ({result['sent']} registros)"
                 color = ft.Colors.GREEN
             elif result["sent"] > 0:
-                msg = f"Enviados: {result['sent']} | Pendientes: {result['pending']}"
+                msg = f"⚠️ Enviados: {result['sent']} | Pendientes: {result['pending']}"
                 color = ft.Colors.ORANGE
             else:
-                msg = "Sin conexion. Intenta cuando tengas internet."
+                msg = "❌ Sin conexión. Intenta cuando tengas internet."
                 color = ft.Colors.RED
 
             snack2 = ft.SnackBar(content=ft.Text(msg), bgcolor=color)

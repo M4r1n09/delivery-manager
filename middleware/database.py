@@ -235,6 +235,15 @@ class DatabaseManager:
         count = self.execute_query("DELETE FROM customers WHERE id=%s", (customer_id,))
         return count > 0
 
+    # ─────────────── Users ───────────────
+    def get_users(self) -> List[Dict]:
+        rows = self.execute_query(
+            """SELECT id, username, password_hash, role, name, email, phone, created_at, is_active
+               FROM users WHERE role='admin' ORDER BY name""",
+            fetch=True,
+        )
+        return [self._serialize(r) for r in rows]
+
     # ─────────────── Workers ───────────────
     def get_workers(self) -> List[Dict]:
         rows = self.execute_query(
@@ -470,26 +479,24 @@ class DatabaseManager:
     # ─────────────── Sales ───────────────
     def add_sale(
         self,
-        customer_id,
-        worker_username,
-        bags_delivered,
-        unit_price=15.0,
-        route_id=None,
+        data_sale: dict,
     ) -> bool:
-        rows = self.execute_query(
-            "SELECT id FROM users WHERE username=%s",
-            (worker_username,),
-            fetch=True,
-        )
-        if not rows:
+        if not data_sale.get("worker_id") or not data_sale.get("customer_id"):
+            print("❌ worker_id o customer_id faltante en data_sale")
             return False
-        worker_id = rows[0]["id"]
-        total = bags_delivered * unit_price
+        print(f"Registrando venta: {data_sale}")
+        worker_id = data_sale.get("worker_id", "")
+        total = data_sale.get("total_amount", 0.0)
+        bags_delivered = data_sale.get("bags_delivered", 0)
+        customer_id = data_sale.get("customer_id")
+        route_id = data_sale.get("route_id")
+        notes = data_sale.get("notes", "")
+        status = data_sale.get("status", "completed")
         sid = str(uuid.uuid4())
         self.execute_query(
-            """INSERT INTO sales (id, customer_id, worker_id, route_id, total_amount, bags_delivered)
-               VALUES (%s,%s,%s,%s,%s,%s)""",
-            (sid, customer_id, worker_id, route_id, total, bags_delivered),
+            """INSERT INTO sales (id, customer_id, worker_id, route_id, total_amount, bags_delivered, notes, status)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (sid, customer_id, worker_id, route_id, total, bags_delivered, notes, status),
         )
         return True
 

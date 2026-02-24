@@ -136,9 +136,7 @@ class DatabaseManager:
             print("Primer user:", self.users[0])
         password_hash = hashlib.sha256(password.encode()).hexdigest()
         for user in self.users:
-            print(
-                f"Checking user: {user['username']}"
-            )
+            print(f"Checking user: {user['username']}")
             if (
                 user["username"] == username
                 and user["password_hash"] == password_hash
@@ -197,10 +195,15 @@ class DatabaseManager:
             ),
         }
 
-    def get_worker_truck(self, worker_id: str) -> Optional[Dict]:
+    def get_worker_truck(self, worker_username: str) -> Optional[Dict]:
         """Obtiene camión asignado al trabajador"""
         for truck in self.trucks:
-            if truck["assigned_worker_id"] == worker_id and truck["is_active"]:
+            print(truck)
+            print("\nusername:", worker_username)
+            if (
+                truck["assigned_worker_username"] == worker_username
+                and truck["status"] == "in_use"
+            ):
                 return truck
         return None
 
