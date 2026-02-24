@@ -770,6 +770,11 @@ class WorkerDashboard:
         # Solo local
         db_manager.sales.append(sale_payload)
         add_to_queue("POST", "/sales", sale_payload)
+        add_to_queue(
+            "PUT",
+            f"/routes/{self.current_route_id}",
+            {"status": sale_payload.get("status", "pending")},
+        )
 
         snack = ft.SnackBar(
             content=ft.Text("Entrega guardada"), bgcolor=ft.Colors.GREEN
@@ -816,13 +821,13 @@ class WorkerDashboard:
             snack.open = False
 
             if result["pending"] == 0:
-                msg = f"Todos los datos subidos ({result['sent']} registros)"
+                msg = f"✅ Todos los datos subidos ({result['sent']} registros)"
                 color = ft.Colors.GREEN
             elif result["sent"] > 0:
-                msg = f"Enviados: {result['sent']} | Pendientes: {result['pending']}"
+                msg = f"⚠️ Enviados: {result['sent']} | Pendientes: {result['pending']}"
                 color = ft.Colors.ORANGE
             else:
-                msg = "Sin conexion. Intenta cuando tengas internet."
+                msg = "❌ Sin conexión. Intenta cuando tengas internet."
                 color = ft.Colors.RED
 
             snack2 = ft.SnackBar(content=ft.Text(msg), bgcolor=color)

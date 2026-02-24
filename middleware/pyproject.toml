@@ -1,0 +1,53 @@
+[project]
+name = "ice-delivery-app"
+version = "1.0.0"
+description = "Sistema de Entrega de Hielo - Ice Delivery Management App"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    { name = "Tonalivery Developer", email = "dev@tonalivery.com" }
+]
+dependencies = [
+  "flet==0.28.3",
+  "python-dotenv>=1.0.0",
+  "python-barcode>=0.15.1",
+  "pytz>=2025.2",
+  "fastapi>=0.128.8",
+  "psycopg2-binary>=2.9.11",
+]
+
+[tool.flet]
+# org name in reverse domain name notation, e.g. "com.mycompany".
+# Combined with project.name to build bundle ID for iOS and Android apps
+org = "com.tonalivery"
+
+# project display name that is used as an app title on Android and iOS home screens,
+# shown in window titles and about app dialogs on desktop.
+product = "Ice Delivery"
+
+# company name to display in about app dialogs
+company = "Tonalivery"
+
+# copyright text to display in about app dialogs
+copyright = "Copyright (C) 2025 by Tonalivery"
+
+[tool.flet.app]
+path = "tonalivery"
+
+[tool.uv]
+dev-dependencies = [
+    "flet[all]==0.28.3",
+]
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.9"
+flet = "0.28.3"
+python-dotenv = "^1.0.0"
+python-barcode = "^0.15.1"
+pytz = "^2025.2"
+
+[tool.poetry.group.dev.dependencies]
+flet = {extras = ["all"], version = "0.28.3"}

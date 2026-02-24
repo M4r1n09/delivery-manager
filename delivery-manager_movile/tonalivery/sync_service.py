@@ -9,7 +9,9 @@ from datetime import datetime, timedelta
 from database_mobile_simplified import db_manager
 
 # URL de tu middleware
-MIDDLEWARE_URL = os.getenv("MIDDLEWARE_URL", "http://localhost:9000")
+MIDDLEWARE_URL = os.getenv(
+    "MIDDLEWARE_URL", "http://localhost:6789"
+)  # "http://18.117.83.152:6789"
 
 # Archivo para guardar la ultima sincronizacion
 SYNC_TIMESTAMP_FILE = "last_sync.json"

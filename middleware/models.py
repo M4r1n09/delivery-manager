@@ -114,7 +114,13 @@ class DeliveryCreate(BaseModel):
 
 # ======================== SALES ========================
 class SaleCreate(BaseModel):
-    data_sale: dict
+    customer_id: str
+    worker_id: str
+    route_id: Optional[str] = None
+    total_amount: float
+    bags_delivered: int
+    notes: str = ""
+    delivered_at: Optional[str] = None
 
 
 # ======================== TRUCKS ========================

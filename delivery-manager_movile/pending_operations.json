@@ -269,5 +269,21 @@
       "delivered_at": "2026-02-24T02:35:56.047159"
     },
     "created_at": "2026-02-24T02:35:56.063144"
+  },
+  {
+    "id": "1771968988.93789",
+    "operation": "POST",
+    "endpoint": "/sales",
+    "data": {
+      "customer_id": "0de84218-8409-4ca4-8c1a-0ecf2e084209",
+      "worker_id": "549e7f9f-3a4f-4aab-b4ac-7007909a0281",
+      "route_id": "23fa73f6-d059-4515-aebb-2aee8217ddaa",
+      "total_amount": 54,
+      "bags_delivered": "9",
+      "notes": "Notas Refrigerador: erik | Notas Limpieza: erwqa",
+      "status": "completed",
+      "delivered_at": "2026-02-24T15:36:28.936590"
+    },
+    "created_at": "2026-02-24T15:36:28.937921"
   }
 ]

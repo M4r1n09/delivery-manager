@@ -167,12 +167,12 @@ def delete_customer(customer_id: str):
 # ═══════════════════════════════════════════
 #  USER
 # ═══════════════════════════════════════════
-@app.get("/users", tags=["Workers"])
+@app.get("/users", tags=["users"])
 def list_users():
     return ApiResponse(success=True, data=db.get_users())
 
 
-@app.get("/users/{user_id}", tags=["Workers"])
+@app.get("/users/{user_id}", tags=["users"])
 def get_user(user_id: str):
     w = db.get_user_by_id(user_id)
     if not w:
@@ -180,7 +180,7 @@ def get_user(user_id: str):
     return ApiResponse(success=True, data=w)
 
 
-@app.post("/users", tags=["Workers"])
+@app.post("/users", tags=["users"])
 def create_user(body: WorkerCreate):
     try:
         db.add_user(
@@ -195,7 +195,7 @@ def create_user(body: WorkerCreate):
         raise HTTPException(500, str(e))
 
 
-@app.put("/users/{user_id}", tags=["Workers"])
+@app.put("/users/{user_id}", tags=["users"])
 def update_user(user_id: str, body: WorkerUpdate):
     ok = db.update_user(
         user_id,
@@ -210,7 +210,7 @@ def update_user(user_id: str, body: WorkerUpdate):
     return ApiResponse(success=True, message="Trabajador actualizado")
 
 
-@app.delete("/users/{user_id}", tags=["Workers"])
+@app.delete("/users/{user_id}", tags=["users"])
 def delete_user(user_id: str):
     ok = db.delete_user(user_id)
     if not ok:
@@ -377,10 +377,19 @@ def get_sales_by_period(period: str):
 
 @app.post("/sales", tags=["Sales"])
 def create_sale(body: SaleCreate):
-    ok = db.add_sale(data_sale=body.data_sale)
-    if not ok:
-        raise HTTPException(500, "Error registrando venta")
-    return ApiResponse(success=True, message="Venta registrada")
+    try:
+        # Validación mínima: customer_id y worker_id
+        if not body.customer_id or not body.worker_id:
+            raise HTTPException(400, "customer_id y worker_id son requeridos")
+
+        data_sale = body.model_dump(exclude_none=True)
+        ok = db.add_sale(data_sale=data_sale)
+        if not ok:
+            raise HTTPException(500, "Error registrando venta")
+
+        return ApiResponse(success=True, message="Venta registrada")
+    except Exception as e:
+        raise HTTPException(400, str(e))
 
 
 # ═══════════════════════════════════════════
@@ -519,7 +528,7 @@ def dashboard_stats():
 # ═══════════════════════════════════════════
 OPERATION_MAP = {
     "create_delivery": lambda d: db.add_delivery_record(**d),
-    "create_sale": lambda d: db.add_sale(**d),
+    "create_sale": lambda d: db.add_sale(data_sale=d),
     "update_route": lambda d: db.update_route(**d),
 }
 
