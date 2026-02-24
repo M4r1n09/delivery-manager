@@ -1,13 +1,45 @@
 import flet as ft
 import os
 import subprocess
+import sys
 from dotenv import load_dotenv
 from database import db_manager
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
-# Cargar variables de entorno
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
+# Función para determinar la ruta base cuando se ejecuta como script o como ejecutable
+def get_base_path():
+    if getattr(sys, 'frozen', False):
+        # Si se está ejecutando como ejecutable compilado
+        return os.path.dirname(sys.executable)
+    else:
+        # Si se está ejecutando como script .py
+        return os.path.dirname(os.path.abspath(__file__))
+
+# Cargar variables de entorno - buscar en múltiples ubicaciones
+env_paths = [
+    # 1. Mismo directorio que el ejecutable o script
+    os.path.join(get_base_path(), ".env"),
+    
+    # 2. Directorio padre (estructura original)
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"),
+    
+    # 3. Ruta absoluta específica (como respaldo)
+    "C:\\Users\\marin\\Documents\\PROJECTS\\app_desktop\\.env"
+]
+
+# Intentar cargar .env desde las diferentes rutas
+env_loaded = False
+for env_path in env_paths:
+    if os.path.exists(env_path):
+        load_dotenv(dotenv_path=env_path)
+        print(f"Cargando variables de entorno desde: {env_path}")
+        env_loaded = True
+        break
+
+if not env_loaded:
+    print("ADVERTENCIA: No se pudo encontrar el archivo .env en ninguna ubicación.")
+    print(f"Rutas buscadas: {env_paths}")
 
 
 class LoginView:
@@ -1420,6 +1452,9 @@ class AdminDashboard:
         self.user = user
         self.on_logout = on_logout
         self.current_view = "overview"
+        self.sales_filter = "all"  # all, today, week, month
+        self.filtered_sales = []
+        self.sales_summary = {"count": 0, "revenue": 0.0, "bags": 0}
 
     def show_overview(self, e=None):
         self.current_view = "overview"
@@ -1439,6 +1474,7 @@ class AdminDashboard:
 
     def show_sales(self, e=None):
         self.current_view = "sales"
+        self.load_filtered_sales()
         self.update_content()
 
     def show_reports(self, e=None):
@@ -1449,7 +1485,872 @@ class AdminDashboard:
         self.current_view = "trucks"
         self.update_content()
 
-    ############# Navigation Rail Change Handler #######################
+
+    def load_filtered_sales(self):
+        """Load sales based on current filter with optimized database queries"""
+        try:
+            if self.sales_filter == "today":
+                # Get today's sales
+                today = datetime.now().date()
+                query = """
+                    SELECT s.id, s.total_amount, s.bags_delivered, s.created_at,
+                           c.name as customer_name, c.address as customer_address,
+                           u.name as worker_name
+                    FROM sales s
+                    JOIN customers c ON s.customer_id = c.id
+                    JOIN users u ON s.worker_id = u.id
+                    WHERE DATE(s.created_at) = %s
+                    ORDER BY s.created_at DESC
+                """
+                self.filtered_sales = db_manager.execute_query(query, (today,), fetch=True)
+                
+            elif self.sales_filter == "week":
+                # Get this week's sales
+                week_start = datetime.now().date() - timedelta(days=7)
+                query = """
+                    SELECT s.id, s.total_amount, s.bags_delivered, s.created_at,
+                           c.name as customer_name, c.address as customer_address,
+                           u.name as worker_name
+                    FROM sales s
+                    JOIN customers c ON s.customer_id = c.id
+                    JOIN users u ON s.worker_id = u.id
+                    WHERE s.created_at >= %s
+                    ORDER BY s.created_at DESC
+                """
+                self.filtered_sales = db_manager.execute_query(query, (week_start,), fetch=True)
+                
+            elif self.sales_filter == "month":
+                # Get this month's sales
+                month_start = datetime.now().date() - timedelta(days=30)
+                query = """
+                    SELECT s.id, s.total_amount, s.bags_delivered, s.created_at,
+                           c.name as customer_name, c.address as customer_address,
+                           u.name as worker_name
+                    FROM sales s
+                    JOIN customers c ON s.customer_id = c.id
+                    JOIN users u ON s.worker_id = u.id
+                    WHERE s.created_at >= %s
+                    ORDER BY s.created_at DESC
+                """
+                self.filtered_sales = db_manager.execute_query(query, (month_start,), fetch=True)
+                
+            else:  # all
+                # Get all sales with limit for performance
+                self.filtered_sales = db_manager.get_sales(limit=100)
+            
+            self.calculate_sales_summary()
+            
+        except Exception as e:
+            print(f"❌ Error loading filtered sales: {e}")
+            self.filtered_sales = []
+            self.sales_summary = {"count": 0, "revenue": 0.0, "bags": 0}
+
+    def calculate_sales_summary(self):
+        """Calculate summary statistics for filtered sales"""
+        if not self.filtered_sales:
+            self.sales_summary = {"count": 0, "revenue": 0.0, "bags": 0}
+            return
+            
+        count = len(self.filtered_sales)
+        revenue = sum(float(sale.get("total_amount", 0)) for sale in self.filtered_sales)
+        bags = sum(int(sale.get("bags_delivered", 0)) for sale in self.filtered_sales)
+        
+        self.sales_summary = {
+            "count": count,
+            "revenue": revenue,
+            "bags": bags
+        }
+
+    def set_sales_filter(self, filter_type: str):
+        """Set sales filter and reload data"""
+        self.sales_filter = filter_type
+        self.load_filtered_sales()
+        if self.current_view == "sales":
+            self.update_content()
+
+    def build_sales_filter_buttons(self):
+        """Build filter buttons for sales view"""
+        return ft.Row(
+            [
+                ft.ElevatedButton(
+                    "Todas",
+                    on_click=lambda e: self.set_sales_filter("all"),
+                    bgcolor=ft.Colors.BLUE if self.sales_filter == "all" else ft.Colors.GREY_300,
+                    color=ft.Colors.WHITE if self.sales_filter == "all" else ft.Colors.BLACK,
+                ),
+                ft.ElevatedButton(
+                    "Hoy",
+                    on_click=lambda e: self.set_sales_filter("today"),
+                    bgcolor=ft.Colors.BLUE if self.sales_filter == "today" else ft.Colors.GREY_300,
+                    color=ft.Colors.WHITE if self.sales_filter == "today" else ft.Colors.BLACK,
+                ),
+                ft.ElevatedButton(
+                    "Semana",
+                    on_click=lambda e: self.set_sales_filter("week"),
+                    bgcolor=ft.Colors.BLUE if self.sales_filter == "week" else ft.Colors.GREY_300,
+                    color=ft.Colors.WHITE if self.sales_filter == "week" else ft.Colors.BLACK,
+                ),
+                ft.ElevatedButton(
+                    "Mes",
+                    on_click=lambda e: self.set_sales_filter("month"),
+                    bgcolor=ft.Colors.BLUE if self.sales_filter == "month" else ft.Colors.GREY_300,
+                    color=ft.Colors.WHITE if self.sales_filter == "month" else ft.Colors.BLACK,
+                ),
+            ],
+            alignment=ft.MainAxisAlignment.START,
+            spacing=10,
+        )
+
+    def build_sales_summary_cards(self):
+        """Build summary cards for sales statistics"""
+        return ft.Row(
+            [
+                self.create_metric_card(
+                    "Ventas",
+                    str(self.sales_summary["count"]),
+                    ft.Icons.SHOPPING_CART,
+                    ft.Colors.BLUE,
+                ),
+                self.create_metric_card(
+                    "Ingresos",
+                    f"${self.sales_summary['revenue']:.2f}",
+                    ft.Icons.ATTACH_MONEY,
+                    ft.Colors.GREEN,
+                ),
+                self.create_metric_card(
+                    "Bolsas",
+                    str(self.sales_summary["bags"]),
+                    ft.Icons.INVENTORY,
+                    ft.Colors.ORANGE,
+                ),
+            ],
+            spacing=20,
+        )
+
+    def update_content(self):
+        content = ft.Container()
+
+        if self.current_view == "overview":
+            stats = db_manager.get_dashboard_stats()
+
+            content = ft.Column(
+                [
+                    ft.Text(
+                        "Dashboard Administrativo", size=28, weight=ft.FontWeight.BOLD
+                    ),
+                    ft.Container(height=20),
+                    ft.Row(
+                        [
+                            self.create_metric_card(
+                                "Clientes",
+                                str(stats["total_customers"]),
+                                ft.Icons.PEOPLE,
+                                ft.Colors.BLUE,
+                            ),
+                            self.create_metric_card(
+                                "Trabajadores",
+                                str(stats["total_workers"]),
+                                ft.Icons.WORK,
+                                ft.Colors.GREEN,
+                            ),
+                            self.create_metric_card(
+                                "Camiones",
+                                str(stats["total_trucks"]),
+                                ft.Icons.LOCAL_SHIPPING,
+                                ft.Colors.PURPLE,
+                            ),
+                            self.create_metric_card(
+                                "Disponibles",
+                                str(stats["available_trucks"]),
+                                ft.Icons.CHECK_CIRCLE,
+                                ft.Colors.TEAL,
+                            ),
+                        ],
+                        wrap=True,
+                    ),
+                    ft.Container(height=10),
+                    ft.Row(
+                        [
+                            self.create_metric_card(
+                                "Ventas",
+                                str(stats["total_sales"]),
+                                ft.Icons.SHOPPING_CART,
+                                ft.Colors.ORANGE,
+                            ),
+                            self.create_metric_card(
+                                "Ingresos",
+                                f"${stats['total_revenue']:.2f}",
+                                ft.Icons.ATTACH_MONEY,
+                                ft.Colors.RED,
+                            ),
+                        ],
+                        wrap=True,
+                    ),
+                    ft.Container(height=30),
+                    ft.Text("Actividad Reciente", size=20, weight=ft.FontWeight.BOLD),
+                    self.build_recent_activity(),
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            )
+
+        elif self.current_view == "routes":
+            routes = db_manager.get_routes()
+            routes_list = []
+
+            for route in routes:
+                routes_list.append(
+                    ft.ListTile(
+                        leading=ft.Icon(ft.Icons.ROUTE),
+                        title=ft.Text(route["name"]),
+                        subtitle=ft.Text(f"Descripción: {route['description']}"),
+                        trailing=ft.Row(
+                            [
+                                ft.IconButton(
+                                    ft.Icons.EDIT,
+                                    on_click=lambda e, rid=route[
+                                        "id"
+                                    ]: self.edit_route_dialog(rid),
+                                ),
+                                ft.IconButton(
+                                    ft.Icons.DELETE,
+                                    on_click=lambda e, rid=route[
+                                        "id"
+                                    ]: self.delete_route_dialog(rid),
+                                    icon_color=ft.Colors.RED,
+                                ),
+                            ],
+                            tight=True,
+                        ),
+                    )
+                )
+
+            content = ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Text(
+                                "Gestión de Rutas", size=24, weight=ft.FontWeight.BOLD
+                            ),
+                            ft.ElevatedButton(
+                                "Agregar Ruta",
+                                on_click=self.add_route,
+                                icon=ft.Icons.ADD,
+                            ),
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                    ft.Container(height=20),
+                    *routes_list,
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            )
+
+        elif self.current_view == "customers":
+            customers = db_manager.get_customers()
+            customers_list = []
+
+            for customer in customers:
+                customers_list.append(
+                    ft.ListTile(
+                        leading=ft.Icon(ft.Icons.STORE),
+                        title=ft.Text(
+                            f"{customer['name']}        $ {customer['price_sale']:.2f}"
+                        ),
+                        subtitle=ft.Text(
+                            f"{customer['address']} - {customer['phone']}"
+                        ),
+                        trailing=ft.Row(
+                            [
+                                ft.IconButton(
+                                    ft.Icons.EDIT,
+                                    on_click=lambda e, cid=customer[
+                                        "id"
+                                    ]: self.edit_customer_dialog(cid),
+                                ),
+                                ft.IconButton(
+                                    ft.Icons.DELETE,
+                                    on_click=lambda e, cid=customer[
+                                        "id"
+                                    ]: self.delete_customer_dialog(cid),
+                                    icon_color=ft.Colors.RED,
+                                ),
+                            ],
+                            tight=True,
+                        ),
+                    )
+                )
+
+            content = ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Text(
+                                "Gestión de Clientes",
+                                size=24,
+                                weight=ft.FontWeight.BOLD,
+                            ),
+                            ft.ElevatedButton(
+                                "Agregar Cliente",
+                                on_click=self.add_customer,
+                                icon=ft.Icons.ADD,
+                            ),
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                    ft.Container(height=20),
+                    *customers_list,
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            )
+
+        elif self.current_view == "workers":
+            workers = db_manager.get_workers()
+            workers_list_activate = []
+            workers_list_deactivate = []
+
+            for worker in workers:
+                if worker["is_active"]:
+                    workers_list_activate.append(
+                        ft.ListTile(
+                            leading=ft.Icon(ft.Icons.PERSON),
+                            title=ft.Text(worker["name"]),
+                            subtitle=ft.Text(f"Usuario: {worker['username']}"),
+                            trailing=ft.Row(
+                                [
+                                    ft.IconButton(
+                                        ft.Icons.EDIT,
+                                        on_click=lambda e, wid=worker[
+                                            "id"
+                                        ]: self.update_worker(wid),
+                                    ),
+                                    ft.IconButton(
+                                        ft.Icons.DELETE,
+                                        on_click=lambda e, wid=worker[
+                                            "id"
+                                        ]: self.delete_worker_dialog(wid),
+                                        icon_color=ft.Colors.RED,
+                                    ),
+                                ],
+                                tight=True,
+                            ),
+                        )
+                    )
+                else:
+                    workers_list_deactivate.append(
+                        ft.ListTile(
+                            leading=ft.Icon(ft.Icons.PERSON_OFF),
+                            title=ft.Text(worker["name"]),
+                            subtitle=ft.Text(f"Usuario: {worker['username']}"),
+                            trailing=ft.Row(
+                                [
+                                    ft.IconButton(
+                                        ft.Icons.CHECK_CIRCLE,
+                                        on_click=lambda e, wid=worker[
+                                            "id"
+                                        ]: self.activate_worker(wid),
+                                    ),
+                                    ft.IconButton(
+                                        ft.Icons.DELETE,
+                                        on_click=lambda e, wid=worker[
+                                            "id"
+                                        ]: self.delete_worker_dialog(wid),
+                                        icon_color=ft.Colors.RED,
+                                    ),
+                                ],
+                                tight=True,
+                            ),
+                        )
+                    )
+
+            content = ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Text(
+                                "Gestión de Trabajadores",
+                                size=24,
+                                weight=ft.FontWeight.BOLD,
+                            ),
+                            ft.ElevatedButton(
+                                "Agregar Trabajador",
+                                on_click=self.add_worker,
+                                icon=ft.Icons.ADD,
+                            ),
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                    ft.Container(height=20),
+                    ft.Text(
+                        "Trabajadores Activos",
+                        size=20,
+                        weight=ft.FontWeight.BOLD,
+                        color=ft.Colors.GREEN,
+                    ),
+                    *workers_list_activate,
+                    ft.Text(
+                        "Trabajadores Inactivos",
+                        size=20,
+                        weight=ft.FontWeight.BOLD,
+                        color=ft.Colors.RED,
+                    ),
+                    *workers_list_deactivate,
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            )
+
+        elif self.current_view == "sales":
+            sales_list = []
+            
+            # Build sales list from filtered data
+            for sale in self.filtered_sales[:50]:  # Limit display for performance
+                # Format date
+                created_at = sale.get('created_at')
+                if isinstance(created_at, str):
+                    try:
+                        date_obj = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                        formatted_date = date_obj.strftime("%d/%m/%Y %H:%M")
+                    except:
+                        formatted_date = str(created_at)
+                else:
+                    formatted_date = str(created_at)
+                
+                sales_list.append(
+                    ft.Card(
+                        content=ft.Container(
+                            content=ft.Column(
+                                [
+                                    ft.Row(
+                                        [
+                                            ft.Icon(ft.Icons.RECEIPT, color=ft.Colors.BLUE),
+                                            ft.Column(
+                                                [
+                                                    ft.Text(
+                                                        sale.get('customer_name', 'N/A'),
+                                                        size=16,
+                                                        weight=ft.FontWeight.BOLD,
+                                                    ),
+                                                    ft.Text(
+                                                        f"Trabajador: {sale.get('worker_name', 'N/A')}",
+                                                        size=12,
+                                                        color=ft.Colors.GREY_700,
+                                                    ),
+                                                    ft.Text(
+                                                        formatted_date,
+                                                        size=12,
+                                                        color=ft.Colors.GREY_600,
+                                                    ),
+                                                ],
+                                                spacing=2,
+                                            ),
+                                            ft.Column(
+                                                [
+                                                    ft.Text(
+                                                        f"${float(sale.get('total_amount', 0)):.2f}",
+                                                        size=16,
+                                                        weight=ft.FontWeight.BOLD,
+                                                        color=ft.Colors.GREEN,
+                                                    ),
+                                                    ft.Text(
+                                                        f"{sale.get('bags_delivered', 0)} bolsas",
+                                                        size=12,
+                                                        color=ft.Colors.GREY_700,
+                                                    ),
+                                                ],
+                                                horizontal_alignment=ft.CrossAxisAlignment.END,
+                                            ),
+                                        ],
+                                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                    ),
+                                ],
+                                spacing=5,
+                            ),
+                            padding=15,
+                        ),
+                        margin=ft.margin.only(bottom=5),
+                    )
+                )
+
+            content = ft.Column(
+                [
+                    ft.Text("Registro de Ventas", size=24, weight=ft.FontWeight.BOLD),
+                    ft.Container(height=10),
+                    # Filter buttons
+                    self.build_sales_filter_buttons(),
+                    ft.Container(height=15),
+                    # Summary cards
+                    self.build_sales_summary_cards(),
+                    ft.Container(height=20),
+                    # Sales list
+                    *(
+                        sales_list
+                        if sales_list
+                        else [
+                            ft.Container(
+                                content=ft.Column(
+                                    [
+                                        ft.Icon(ft.Icons.INBOX, size=60, color=ft.Colors.GREY),
+                                        ft.Text(
+                                            "No hay ventas para el período seleccionado",
+                                            size=16,
+                                            color=ft.Colors.GREY_700,
+                                        ),
+                                    ],
+                                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                ),
+                                height=200,
+                                alignment=ft.alignment.center,
+                            )
+                        ]
+                    ),
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            )
+
+        elif self.current_view == "reports":
+            weekly_sales = db_manager.get_sales_by_period("weekly")
+            monthly_sales = db_manager.get_sales_by_period("monthly")
+
+            weekly_revenue = sum(sale.get("total_amount", 0) for sale in weekly_sales)
+            monthly_revenue = sum(sale.get("total_amount", 0) for sale in monthly_sales)
+
+            content = ft.Column(
+                [
+                    ft.Text("Reportes de Ventas", size=24, weight=ft.FontWeight.BOLD),
+                    ft.Container(height=20),
+                    ft.Row(
+                        [
+                            self.create_report_card(
+                                "Ventas Semanales",
+                                len(weekly_sales),
+                                f"${weekly_revenue:.2f}",
+                            ),
+                            self.create_report_card(
+                                "Ventas Mensuales",
+                                len(monthly_sales),
+                                f"${monthly_revenue:.2f}",
+                            ),
+                        ]
+                    ),
+                    ft.Container(height=30),
+                    ft.Text("Gráfico de Ventas", size=20, weight=ft.FontWeight.BOLD),
+                    ft.Container(
+                        content=ft.Column(
+                            [
+                                ft.Icon(
+                                    ft.Icons.BAR_CHART, size=100, color=ft.Colors.BLUE
+                                ),
+                                ft.Text("Gráfico de ventas por período"),
+                                ft.Text("(Integración con librerías de gráficos)"),
+                            ],
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                        height=300,
+                        border=ft.border.all(1, ft.Colors.GREY),
+                        border_radius=10,
+                        alignment=ft.alignment.center,
+                    ),
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            )
+
+        elif self.current_view == "trucks":
+            trucks = db_manager.get_trucks()
+            trucks_list = []
+
+            for truck in trucks:
+                status_color = {
+                    "available": ft.Colors.GREEN,
+                    "in_use": ft.Colors.BLUE,
+                    "maintenance": ft.Colors.ORANGE,
+                    "out_of_service": ft.Colors.RED,
+                }.get(truck["status"], ft.Colors.GREY)
+
+                trucks_list.append(
+                    ft.Card(
+                        content=ft.Container(
+                            content=ft.Column(
+                                [
+                                    ft.Row(
+                                        [
+                                            ft.Icon(
+                                                ft.Icons.LOCAL_SHIPPING,
+                                                size=40,
+                                                color=ft.Colors.BLUE,
+                                            ),
+                                            ft.Column(
+                                                [
+                                                    ft.Text(
+                                                        f"{truck['brand']} {truck['model']}",
+                                                        size=16,
+                                                        weight=ft.FontWeight.BOLD,
+                                                    ),
+                                                    ft.Text(
+                                                        f"Placa: {truck['license_plate']}",
+                                                        size=14,
+                                                    ),
+                                                    ft.Text(
+                                                        f"Año: {truck['year'] or 'N/A'}",
+                                                        size=12,
+                                                        color=ft.Colors.GREY_700,
+                                                    ),
+                                                ],
+                                                spacing=2,
+                                            ),
+                                            ft.Column(
+                                                [
+                                                    ft.Container(
+                                                        content=ft.Text(
+                                                            truck["status"]
+                                                            .replace("_", " ")
+                                                            .title(),
+                                                            size=12,
+                                                            color=ft.Colors.WHITE,
+                                                            weight=ft.FontWeight.BOLD,
+                                                        ),
+                                                        bgcolor=status_color,
+                                                        padding=ft.padding.symmetric(
+                                                            horizontal=8, vertical=4
+                                                        ),
+                                                        border_radius=10,
+                                                    )
+                                                ]
+                                            ),
+                                        ],
+                                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                    ),
+                                    ft.Divider(height=1),
+                                    ft.Row(
+                                        [
+                                            ft.Text(
+                                                f"Capacidad: {truck['capacity_kg']} kg",
+                                                size=12,
+                                            ),
+                                            ft.Text(
+                                                f"Combustible: {truck['fuel_type'].title()}",
+                                                size=12,
+                                            ),
+                                        ]
+                                    ),
+                                    ft.Text(
+                                        f"Asignado a: {truck['assigned_worker_name'] or 'Sin asignar'}",
+                                        size=12,
+                                        color=(
+                                            ft.Colors.BLUE
+                                            if truck["assigned_worker_name"]
+                                            else ft.Colors.GREY_700
+                                        ),
+                                    ),
+                                    ft.Row(
+                                        [
+                                            ft.ElevatedButton(
+                                                "Asignar",
+                                                icon=ft.Icons.PERSON_ADD,
+                                                on_click=lambda e, tid=truck[
+                                                    "id"
+                                                ]: self.assign_truck_dialog(tid),
+                                                disabled=truck["status"] != "available",
+                                            ),
+                                            ft.ElevatedButton(
+                                                "Editar",
+                                                icon=ft.Icons.EDIT,
+                                                on_click=lambda e, tid=truck[
+                                                    "id"
+                                                ]: self.edit_truck_dialog(tid),
+                                            ),
+                                            ft.IconButton(
+                                                ft.Icons.DELETE,
+                                                on_click=lambda e, tid=truck[
+                                                    "id"
+                                                ]: self.delete_truck(tid),
+                                                icon_color=ft.Colors.RED,
+                                            ),
+                                        ],
+                                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                    ),
+                                ],
+                                spacing=10,
+                            ),
+                            padding=15,
+                        ),
+                        margin=ft.margin.only(bottom=10),
+                    )
+                )
+
+            content = ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Text(
+                                "Gestión de Camiones",
+                                size=24,
+                                weight=ft.FontWeight.BOLD,
+                            ),
+                            ft.ElevatedButton(
+                                "Agregar Camión",
+                                on_click=self.add_truck,
+                                icon=ft.Icons.ADD,
+                            ),
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                    ft.Container(height=20),
+                    *(
+                        trucks_list
+                        if trucks_list
+                        else [ft.Text("No hay camiones registrados")]
+                    ),
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            )
+
+        ####################### Fridges Management #######################
+        elif self.current_view == "fridges":
+            fridges = db_manager.get_fridges()
+            fridges_list = []
+
+            for fridge in fridges:
+                size_display = {
+                    "small": "Pequeño",
+                    "medium": "Mediano",
+                    "large": "Grande",
+                    "extra_large": "Extra Grande",
+                }.get(fridge["size"], fridge["size"])
+
+                fridges_list.append(
+                    ft.Card(
+                        content=ft.Container(
+                            content=ft.Column(
+                                [
+                                    ft.Row(
+                                        [
+                                            ft.Icon(
+                                                ft.Icons.KITCHEN,
+                                                size=40,
+                                                color=ft.Colors.BLUE,
+                                            ),
+                                            ft.Column(
+                                                [
+                                                    ft.Text(
+                                                        fridge["name"],
+                                                        size=16,
+                                                        weight=ft.FontWeight.BOLD,
+                                                    ),
+                                                    ft.Text(
+                                                        f"Cliente: {fridge['customer_name']}",
+                                                        size=14,
+                                                    ),
+                                                    ft.Text(
+                                                        f"Modelo: {fridge['model']}",
+                                                        size=12,
+                                                        color=ft.Colors.GREY_700,
+                                                    ),
+                                                ],
+                                                spacing=2,
+                                            ),
+                                            ft.Column(
+                                                [
+                                                    ft.Container(
+                                                        content=ft.Text(
+                                                            size_display,
+                                                            size=12,
+                                                            color=ft.Colors.WHITE,
+                                                            weight=ft.FontWeight.BOLD,
+                                                        ),
+                                                        bgcolor=ft.Colors.GREEN,
+                                                        padding=ft.padding.symmetric(
+                                                            horizontal=8, vertical=4
+                                                        ),
+                                                        border_radius=10,
+                                                    )
+                                                ]
+                                            ),
+                                        ],
+                                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                    ),
+                                    ft.Divider(height=1),
+                                    ft.Row(
+                                        [
+                                            ft.Text(
+                                                f"Capacidad: {fridge['capacity']} L",
+                                                size=12,
+                                            ),
+                                            ft.Text(
+                                                f"Registrado: {fridge['created_at']}",
+                                                size=12,
+                                                color=ft.Colors.GREY_600,
+                                            ),
+                                        ]
+                                    ),
+                                    ft.Row(
+                                        [
+                                            ft.ElevatedButton(
+                                                "Ver Detalles",
+                                                icon=ft.Icons.VISIBILITY,
+                                                on_click=lambda e, fid=fridge[
+                                                    "id"
+                                                ]: self.view_fridge_details(fid),
+                                                bgcolor=ft.Colors.BLUE,
+                                                color=ft.Colors.WHITE,
+                                            ),
+                                            ft.ElevatedButton(
+                                                "Editar",
+                                                icon=ft.Icons.EDIT,
+                                                on_click=lambda e, fid=fridge[
+                                                    "id"
+                                                ]: self.edit_fridge_dialog(fid),
+                                                bgcolor=ft.Colors.ORANGE,
+                                                color=ft.Colors.WHITE,
+                                            ),
+                                            ft.IconButton(
+                                                ft.Icons.DELETE,
+                                                on_click=lambda e, fid=fridge[
+                                                    "id"
+                                                ]: self.delete_fridge_dialog(fid),
+                                                icon_color=ft.Colors.RED,
+                                            ),
+                                        ],
+                                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                    ),
+                                ],
+                                spacing=10,
+                            ),
+                            padding=15,
+                        ),
+                        margin=ft.margin.only(bottom=10),
+                    )
+                )
+
+            content = ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Text(
+                                "Gestión de Refrigeradores",
+                                size=24,
+                                weight=ft.FontWeight.BOLD,
+                            ),
+                            ft.ElevatedButton(
+                                "Agregar Refrigerador",
+                                on_click=self.add_fridge,
+                                icon=ft.Icons.ADD,
+                            ),
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                    ft.Container(height=20),
+                    *(
+                        fridges_list
+                        if fridges_list
+                        else [ft.Text("No hay refrigeradores registrados")]
+                    ),
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            )
+
+        self.content_area.content = content
+        self.page.update()
+
+    ####################### Rutas Management #######################
     def add_route(self, e):
         def close_dialog(e):
             dialog.open = False
@@ -2099,653 +3000,8 @@ class AdminDashboard:
         self.page.add(snack_bar)
         self.page.update()
 
-    ####################### Dashboard Content Update #######################
-    def update_content(self):
-        content = ft.Container()
-
-        if self.current_view == "overview":
-            stats = db_manager.get_dashboard_stats()
-
-            content = ft.Column(
-                [
-                    ft.Text(
-                        "Dashboard Administrativo", size=28, weight=ft.FontWeight.BOLD
-                    ),
-                    ft.Container(height=20),
-                    ft.Row(
-                        [
-                            self.create_metric_card(
-                                "Clientes",
-                                str(stats["total_customers"]),
-                                ft.Icons.PEOPLE,
-                                ft.Colors.BLUE,
-                            ),
-                            self.create_metric_card(
-                                "Trabajadores",
-                                str(stats["total_workers"]),
-                                ft.Icons.WORK,
-                                ft.Colors.GREEN,
-                            ),
-                            self.create_metric_card(
-                                "Camiones",
-                                str(stats["total_trucks"]),
-                                ft.Icons.LOCAL_SHIPPING,
-                                ft.Colors.PURPLE,
-                            ),
-                            self.create_metric_card(
-                                "Disponibles",
-                                str(stats["available_trucks"]),
-                                ft.Icons.CHECK_CIRCLE,
-                                ft.Colors.TEAL,
-                            ),
-                        ],
-                        wrap=True,
-                    ),
-                    ft.Container(height=10),
-                    ft.Row(
-                        [
-                            self.create_metric_card(
-                                "Ventas",
-                                str(stats["total_sales"]),
-                                ft.Icons.SHOPPING_CART,
-                                ft.Colors.ORANGE,
-                            ),
-                            self.create_metric_card(
-                                "Ingresos",
-                                f"${stats['total_revenue']:.2f}",
-                                ft.Icons.ATTACH_MONEY,
-                                ft.Colors.RED,
-                            ),
-                        ],
-                        wrap=True,
-                    ),
-                    ft.Container(height=30),
-                    ft.Text("Actividad Reciente", size=20, weight=ft.FontWeight.BOLD),
-                    self.build_recent_activity(),
-                ],
-                scroll=ft.ScrollMode.AUTO,
-            )
-
-        elif self.current_view == "routes":
-            routes = db_manager.get_routes()
-            routes_list = []
-
-            for route in routes:
-                routes_list.append(
-                    ft.ListTile(
-                        leading=ft.Icon(ft.Icons.ROUTE),
-                        title=ft.Text(route["name"]),
-                        subtitle=ft.Text(f"Descripción: {route['description']}"),
-                        trailing=ft.Row(
-                            [
-                                ft.IconButton(
-                                    ft.Icons.EDIT,
-                                    on_click=lambda e, rid=route[
-                                        "id"
-                                    ]: self.edit_route_dialog(rid),
-                                ),
-                                ft.IconButton(
-                                    ft.Icons.DELETE,
-                                    on_click=lambda e, rid=route[
-                                        "id"
-                                    ]: self.delete_route_dialog(rid),
-                                    icon_color=ft.Colors.RED,
-                                ),
-                            ],
-                            tight=True,
-                        ),
-                    )
-                )
-
-            content = ft.Column(
-                [
-                    ft.Row(
-                        [
-                            ft.Text(
-                                "Gestión de Rutas", size=24, weight=ft.FontWeight.BOLD
-                            ),
-                            ft.ElevatedButton(
-                                "Agregar Ruta",
-                                on_click=self.add_route,
-                                icon=ft.Icons.ADD,
-                            ),
-                        ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    ),
-                    ft.Container(height=20),
-                    *routes_list,
-                ],
-                scroll=ft.ScrollMode.AUTO,
-            )
-
-        elif self.current_view == "customers":
-            customers = db_manager.get_customers()
-            customers_list = []
-
-            for customer in customers:
-                customers_list.append(
-                    ft.ListTile(
-                        leading=ft.Icon(ft.Icons.STORE),
-                        title=ft.Text(
-                            f"{customer['name']}        $ {customer['price_sale']:.2f}"
-                        ),
-                        subtitle=ft.Text(
-                            f"{customer['address']} - {customer['phone']}"
-                        ),
-                        trailing=ft.Row(
-                            [
-                                ft.IconButton(
-                                    ft.Icons.EDIT,
-                                    on_click=lambda e, cid=customer[
-                                        "id"
-                                    ]: self.edit_customer_dialog(cid),
-                                ),
-                                ft.IconButton(
-                                    ft.Icons.DELETE,
-                                    on_click=lambda e, cid=customer[
-                                        "id"
-                                    ]: self.delete_customer_dialog(cid),
-                                    icon_color=ft.Colors.RED,
-                                ),
-                            ],
-                            tight=True,
-                        ),
-                    )
-                )
-
-            content = ft.Column(
-                [
-                    ft.Row(
-                        [
-                            ft.Text(
-                                "Gestión de Clientes",
-                                size=24,
-                                weight=ft.FontWeight.BOLD,
-                            ),
-                            ft.ElevatedButton(
-                                "Agregar Cliente",
-                                on_click=self.add_customer,
-                                icon=ft.Icons.ADD,
-                            ),
-                        ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    ),
-                    ft.Container(height=20),
-                    *customers_list,
-                ],
-                scroll=ft.ScrollMode.AUTO,
-            )
-
-        elif self.current_view == "workers":
-            workers = db_manager.get_workers()
-            workers_list_activate = []
-            workers_list_deactivate = []
-
-            for worker in workers:
-                if worker["is_active"]:
-                    workers_list_activate.append(
-                        ft.ListTile(
-                            leading=ft.Icon(ft.Icons.PERSON),
-                            title=ft.Text(worker["name"]),
-                            subtitle=ft.Text(f"Usuario: {worker['username']}"),
-                            trailing=ft.Row(
-                                [
-                                    ft.IconButton(
-                                        ft.Icons.EDIT,
-                                        on_click=lambda e, wid=worker[
-                                            "id"
-                                        ]: self.update_worker(wid),
-                                    ),
-                                    ft.IconButton(
-                                        ft.Icons.DELETE,
-                                        on_click=lambda e, wid=worker[
-                                            "id"
-                                        ]: self.delete_worker_dialog(wid),
-                                        icon_color=ft.Colors.RED,
-                                    ),
-                                ],
-                                tight=True,
-                            ),
-                        )
-                    )
-                else:
-                    workers_list_deactivate.append(
-                        ft.ListTile(
-                            leading=ft.Icon(ft.Icons.PERSON_OFF),
-                            title=ft.Text(worker["name"]),
-                            subtitle=ft.Text(f"Usuario: {worker['username']}"),
-                            trailing=ft.Row(
-                                [
-                                    ft.IconButton(
-                                        ft.Icons.CHECK_CIRCLE,
-                                        on_click=lambda e, wid=worker[
-                                            "id"
-                                        ]: self.activate_worker(wid),
-                                    ),
-                                    ft.IconButton(
-                                        ft.Icons.DELETE,
-                                        on_click=lambda e, wid=worker[
-                                            "id"
-                                        ]: self.delete_worker_dialog(wid),
-                                        icon_color=ft.Colors.RED,
-                                    ),
-                                ],
-                                tight=True,
-                            ),
-                        )
-                    )
-
-            content = ft.Column(
-                [
-                    ft.Row(
-                        [
-                            ft.Text(
-                                "Gestión de Trabajadores",
-                                size=24,
-                                weight=ft.FontWeight.BOLD,
-                            ),
-                            ft.ElevatedButton(
-                                "Agregar Trabajador",
-                                on_click=self.add_worker,
-                                icon=ft.Icons.ADD,
-                            ),
-                        ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    ),
-                    ft.Container(height=20),
-                    ft.Text(
-                        "Trabajadores Activos",
-                        size=20,
-                        weight=ft.FontWeight.BOLD,
-                        color=ft.Colors.GREEN,
-                    ),
-                    *workers_list_activate,
-                    ft.Text(
-                        "Trabajadores Inactivos",
-                        size=20,
-                        weight=ft.FontWeight.BOLD,
-                        color=ft.Colors.RED,
-                    ),
-                    *workers_list_deactivate,
-                ],
-                scroll=ft.ScrollMode.AUTO,
-            )
-
-        elif self.current_view == "sales":
-            sales = db_manager.get_sales(limit=20)
-            sales_list = []
-            for sale in sales:
-                sales_list.append(
-                    ft.ListTile(
-                        leading=ft.Icon(ft.Icons.RECEIPT),
-                        title=ft.Text(f"{sale['customer_name']}"),
-                        subtitle=ft.Text(
-                            f"Trabajador: {sale['worker_name']} - Bolsas: {sale.get('bags_delivered', 0)}"
-                        ),
-                        trailing=ft.Text(
-                            f"${sale['total_amount']:.2f}", weight=ft.FontWeight.BOLD
-                        ),
-                    )
-                )
-
-            content = ft.Column(
-                [
-                    ft.Text("Registro de Ventas", size=24, weight=ft.FontWeight.BOLD),
-                    ft.Container(height=20),
-                    *(
-                        sales_list
-                        if sales_list
-                        else [ft.Text("No hay ventas registradas")]
-                    ),
-                ],
-                scroll=ft.ScrollMode.AUTO,
-            )
-
-        elif self.current_view == "reports":
-            weekly_sales = db_manager.get_sales_by_period("weekly")
-            monthly_sales = db_manager.get_sales_by_period("monthly")
-
-            weekly_revenue = sum(sale.get("total_amount", 0) for sale in weekly_sales)
-            monthly_revenue = sum(sale.get("total_amount", 0) for sale in monthly_sales)
-
-            content = ft.Column(
-                [
-                    ft.Text("Reportes de Ventas", size=24, weight=ft.FontWeight.BOLD),
-                    ft.Container(height=20),
-                    ft.Row(
-                        [
-                            self.create_report_card(
-                                "Ventas Semanales",
-                                len(weekly_sales),
-                                f"${weekly_revenue:.2f}",
-                            ),
-                            self.create_report_card(
-                                "Ventas Mensuales",
-                                len(monthly_sales),
-                                f"${monthly_revenue:.2f}",
-                            ),
-                        ]
-                    ),
-                    ft.Container(height=30),
-                    ft.Text("Gráfico de Ventas", size=20, weight=ft.FontWeight.BOLD),
-                    ft.Container(
-                        content=ft.Column(
-                            [
-                                ft.Icon(
-                                    ft.Icons.BAR_CHART, size=100, color=ft.Colors.BLUE
-                                ),
-                                ft.Text("Gráfico de ventas por período"),
-                                ft.Text("(Integración con librerías de gráficos)"),
-                            ],
-                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        ),
-                        height=300,
-                        border=ft.border.all(1, ft.Colors.GREY),
-                        border_radius=10,
-                        alignment=ft.alignment.center,
-                    ),
-                ],
-                scroll=ft.ScrollMode.AUTO,
-            )
-
-        elif self.current_view == "trucks":
-            trucks = db_manager.get_trucks()
-            trucks_list = []
-
-            for truck in trucks:
-                status_color = {
-                    "available": ft.Colors.GREEN,
-                    "in_use": ft.Colors.BLUE,
-                    "maintenance": ft.Colors.ORANGE,
-                    "out_of_service": ft.Colors.RED,
-                }.get(truck["status"], ft.Colors.GREY)
-
-                trucks_list.append(
-                    ft.Card(
-                        content=ft.Container(
-                            content=ft.Column(
-                                [
-                                    ft.Row(
-                                        [
-                                            ft.Icon(
-                                                ft.Icons.LOCAL_SHIPPING,
-                                                size=40,
-                                                color=ft.Colors.BLUE,
-                                            ),
-                                            ft.Column(
-                                                [
-                                                    ft.Text(
-                                                        f"{truck['brand']} {truck['model']}",
-                                                        size=16,
-                                                        weight=ft.FontWeight.BOLD,
-                                                    ),
-                                                    ft.Text(
-                                                        f"Placa: {truck['license_plate']}",
-                                                        size=14,
-                                                    ),
-                                                    ft.Text(
-                                                        f"Año: {truck['year'] or 'N/A'}",
-                                                        size=12,
-                                                        color=ft.Colors.GREY_700,
-                                                    ),
-                                                ],
-                                                spacing=2,
-                                            ),
-                                            ft.Column(
-                                                [
-                                                    ft.Container(
-                                                        content=ft.Text(
-                                                            truck["status"]
-                                                            .replace("_", " ")
-                                                            .title(),
-                                                            size=12,
-                                                            color=ft.Colors.WHITE,
-                                                            weight=ft.FontWeight.BOLD,
-                                                        ),
-                                                        bgcolor=status_color,
-                                                        padding=ft.padding.symmetric(
-                                                            horizontal=8, vertical=4
-                                                        ),
-                                                        border_radius=10,
-                                                    )
-                                                ]
-                                            ),
-                                        ],
-                                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                                    ),
-                                    ft.Divider(height=1),
-                                    ft.Row(
-                                        [
-                                            ft.Text(
-                                                f"Capacidad: {truck['capacity_kg']} kg",
-                                                size=12,
-                                            ),
-                                            ft.Text(
-                                                f"Combustible: {truck['fuel_type'].title()}",
-                                                size=12,
-                                            ),
-                                        ]
-                                    ),
-                                    ft.Text(
-                                        f"Asignado a: {truck['assigned_worker_name'] or 'Sin asignar'}",
-                                        size=12,
-                                        color=(
-                                            ft.Colors.BLUE
-                                            if truck["assigned_worker_name"]
-                                            else ft.Colors.GREY_700
-                                        ),
-                                    ),
-                                    ft.Row(
-                                        [
-                                            ft.ElevatedButton(
-                                                "Asignar",
-                                                icon=ft.Icons.PERSON_ADD,
-                                                on_click=lambda e, tid=truck[
-                                                    "id"
-                                                ]: self.assign_truck_dialog(tid),
-                                                disabled=truck["status"] != "available",
-                                            ),
-                                            ft.ElevatedButton(
-                                                "Editar",
-                                                icon=ft.Icons.EDIT,
-                                                on_click=lambda e, tid=truck[
-                                                    "id"
-                                                ]: self.edit_truck_dialog(tid),
-                                            ),
-                                            ft.IconButton(
-                                                ft.Icons.DELETE,
-                                                on_click=lambda e, tid=truck[
-                                                    "id"
-                                                ]: self.delete_truck(tid),
-                                                icon_color=ft.Colors.RED,
-                                            ),
-                                        ],
-                                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                                    ),
-                                ],
-                                spacing=10,
-                            ),
-                            padding=15,
-                        ),
-                        margin=ft.margin.only(bottom=10),
-                    )
-                )
-
-            content = ft.Column(
-                [
-                    ft.Row(
-                        [
-                            ft.Text(
-                                "Gestión de Camiones",
-                                size=24,
-                                weight=ft.FontWeight.BOLD,
-                            ),
-                            ft.ElevatedButton(
-                                "Agregar Camión",
-                                on_click=self.add_truck,
-                                icon=ft.Icons.ADD,
-                            ),
-                        ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    ),
-                    ft.Container(height=20),
-                    *(
-                        trucks_list
-                        if trucks_list
-                        else [ft.Text("No hay camiones registrados")]
-                    ),
-                ],
-                scroll=ft.ScrollMode.AUTO,
-            )
-
-        ####################### Fridges Management #######################
-        elif self.current_view == "fridges":
-            fridges = db_manager.get_fridges()
-            fridges_list = []
-
-            for fridge in fridges:
-                size_display = {
-                    "small": "Pequeño",
-                    "medium": "Mediano",
-                    "large": "Grande",
-                    "extra_large": "Extra Grande",
-                }.get(fridge["size"], fridge["size"])
-
-                fridges_list.append(
-                    ft.Card(
-                        content=ft.Container(
-                            content=ft.Column(
-                                [
-                                    ft.Row(
-                                        [
-                                            ft.Icon(
-                                                ft.Icons.KITCHEN,
-                                                size=40,
-                                                color=ft.Colors.BLUE,
-                                            ),
-                                            ft.Column(
-                                                [
-                                                    ft.Text(
-                                                        fridge["name"],
-                                                        size=16,
-                                                        weight=ft.FontWeight.BOLD,
-                                                    ),
-                                                    ft.Text(
-                                                        f"Cliente: {fridge['customer_name']}",
-                                                        size=14,
-                                                    ),
-                                                    ft.Text(
-                                                        f"Modelo: {fridge['model']}",
-                                                        size=12,
-                                                        color=ft.Colors.GREY_700,
-                                                    ),
-                                                ],
-                                                spacing=2,
-                                            ),
-                                            ft.Column(
-                                                [
-                                                    ft.Container(
-                                                        content=ft.Text(
-                                                            size_display,
-                                                            size=12,
-                                                            color=ft.Colors.WHITE,
-                                                            weight=ft.FontWeight.BOLD,
-                                                        ),
-                                                        bgcolor=ft.Colors.GREEN,
-                                                        padding=ft.padding.symmetric(
-                                                            horizontal=8, vertical=4
-                                                        ),
-                                                        border_radius=10,
-                                                    )
-                                                ]
-                                            ),
-                                        ],
-                                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                                    ),
-                                    ft.Divider(height=1),
-                                    ft.Row(
-                                        [
-                                            ft.Text(
-                                                f"Capacidad: {fridge['capacity']} L",
-                                                size=12,
-                                            ),
-                                            ft.Text(
-                                                f"Registrado: {fridge['created_at']}",
-                                                size=12,
-                                                color=ft.Colors.GREY_600,
-                                            ),
-                                        ]
-                                    ),
-                                    ft.Row(
-                                        [
-                                            ft.ElevatedButton(
-                                                "Ver Detalles",
-                                                icon=ft.Icons.VISIBILITY,
-                                                on_click=lambda e, fid=fridge[
-                                                    "id"
-                                                ]: self.view_fridge_details(fid),
-                                                bgcolor=ft.Colors.BLUE,
-                                                color=ft.Colors.WHITE,
-                                            ),
-                                            ft.ElevatedButton(
-                                                "Editar",
-                                                icon=ft.Icons.EDIT,
-                                                on_click=lambda e, fid=fridge[
-                                                    "id"
-                                                ]: self.edit_fridge_dialog(fid),
-                                                bgcolor=ft.Colors.ORANGE,
-                                                color=ft.Colors.WHITE,
-                                            ),
-                                            ft.IconButton(
-                                                ft.Icons.DELETE,
-                                                on_click=lambda e, fid=fridge[
-                                                    "id"
-                                                ]: self.delete_fridge_dialog(fid),
-                                                icon_color=ft.Colors.RED,
-                                            ),
-                                        ],
-                                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                                    ),
-                                ],
-                                spacing=10,
-                            ),
-                            padding=15,
-                        ),
-                        margin=ft.margin.only(bottom=10),
-                    )
-                )
-
-            content = ft.Column(
-                [
-                    ft.Row(
-                        [
-                            ft.Text(
-                                "Gestión de Refrigeradores",
-                                size=24,
-                                weight=ft.FontWeight.BOLD,
-                            ),
-                            ft.ElevatedButton(
-                                "Agregar Refrigerador",
-                                on_click=self.add_fridge,
-                                icon=ft.Icons.ADD,
-                            ),
-                        ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    ),
-                    ft.Container(height=20),
-                    *(
-                        fridges_list
-                        if fridges_list
-                        else [ft.Text("No hay refrigeradores registrados")]
-                    ),
-                ],
-                scroll=ft.ScrollMode.AUTO,
-            )
-
-        self.content_area.content = content
-        self.page.update()
-
     ####################### Trucks Management #######################
+    
     def assign_truck_dialog(self, truck_id: str):
         def close_dialog(e):
             dialog.open = False
