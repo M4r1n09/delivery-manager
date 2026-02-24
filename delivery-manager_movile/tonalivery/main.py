@@ -4,7 +4,8 @@ import sys
 from dotenv import load_dotenv
 import threading
 from sync_service import sync_all_data, sync_if_needed
-
+from sync_queue import add_to_queue
+from sync_queue import flush_queue, get_pending_count, is_manual_required
 from database_mobile_simplified import db_manager
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -122,11 +123,11 @@ class WorkerDashboard:
         self.user = user
         self.on_logout = on_logout
         self.current_view = "routes"
+        self.routes = []
         self.current_route_id = None
         self.delivery_customer = None
         self.delivery_step = 1
         self.delivery_data = {}
-        print("delivery_data:", self.delivery_data)
         self.bags_to_delivered = 0
         self.bags_delivered = 0
         self.shrink_bags = 0
@@ -163,7 +164,6 @@ class WorkerDashboard:
         customer = db_manager.get_customer_by_barcode(barcode_value.strip())
         if customer and customer["id"] == id_customer:
             self.close_dialog()
-            self.update_content()
             self.start_delivery_process(customer)
         else:
             self.show_error_message(
@@ -187,12 +187,20 @@ class WorkerDashboard:
         self.update_content()
 
     def show_error_message(self, message):
+        # Limpiar snackbars anteriores
+        self.page.overlay[:] = [
+            item for item in self.page.overlay if not isinstance(item, ft.SnackBar)
+        ]
         snack_bar = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED)
         self.page.overlay.append(snack_bar)
         snack_bar.open = True
         self.page.update()
 
     def show_success_message(self, message):
+        # Limpiar snackbars anteriores
+        self.page.overlay[:] = [
+            item for item in self.page.overlay if not isinstance(item, ft.SnackBar)
+        ]
         snack_bar = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.GREEN)
         self.page.overlay.append(snack_bar)
         snack_bar.open = True
@@ -211,9 +219,9 @@ class WorkerDashboard:
         self.page.update()
 
     def build_routes(self):
-        routes = db_manager.get_routes()
+        self.routes = db_manager.get_routes()
 
-        if not routes:
+        if not self.routes:
             return ft.Container(
                 content=ft.Column(
                     [
@@ -234,9 +242,9 @@ class WorkerDashboard:
 
         route_cards = []
         # print("Rutas obtenidas:", routes)
-        for route in routes:
+        for route in self.routes:
             # customers = db_manager.get_route_customers()
-            print(route)
+            print(f"route: {route}")
             card = ft.Card(
                 content=ft.Container(
                     content=ft.Column(
@@ -336,7 +344,7 @@ class WorkerDashboard:
     def show_barcode_scanner(self, route_id):
         self.current_route_id = route_id
         customer_id = db_manager.get_route_customer_by_id(route_id)
-        print("Customer ID:", customer_id)
+        self.page.overlay.clear()
         barcode_field = ft.TextField(
             label="Código de barras del cliente",
             prefix_icon=ft.Icons.QR_CODE,
@@ -367,15 +375,29 @@ class WorkerDashboard:
 
         self.page.overlay.append(scanner_dialog)
         scanner_dialog.open = True
-        # self.close_dialog()
         self.page.update()
 
     def close_dialog(self):
-        if self.page.overlay:
-            self.page.overlay[-1].open = False
-            self.page.overlay.pop()
-            self.page.update()
-            self.update_content()
+        # Eliminar TODOS los AlertDialog del overlay
+        items_to_remove = []
+        for item in self.page.overlay:
+            if isinstance(item, ft.AlertDialog):
+                item.open = False
+                items_to_remove.append(item)
+
+        for item in items_to_remove:
+            self.page.overlay.remove(item)
+
+        # Tambien limpiar SnackBars viejos que ya no estan visibles
+        snacks_to_remove = [
+            item
+            for item in self.page.overlay
+            if isinstance(item, ft.SnackBar) and not item.open
+        ]
+        for snack in snacks_to_remove:
+            self.page.overlay.remove(snack)
+
+        self.page.update()
 
     def build_maps(self):
         content = ft.Column(
@@ -547,32 +569,30 @@ class WorkerDashboard:
             {"title": "Tomar Evidencia", "icon": ft.Icons.CAMERA_ALT},
             {"title": "Finalizar Entrega", "icon": ft.Icons.CHECK_CIRCLE},
         ]
-        print("Despues de steps")
         # Contenedores para comentarios y entradas
-        comentarios_refrigerador = ft.TextField(
+        self.comentarios_refrigerador = ft.TextField(
             label="Comentarios sobre el refrigerador",
             multiline=True,
             visible=self.delivery_step == 1,
         )
-        print("Comentarios")
-        comentarios_limpieza = ft.TextField(
+        self.comentarios_limpieza = ft.TextField(
             label="Comentarios sobre la limpieza",
             multiline=True,
             visible=self.delivery_step == 2,
         )
-        print("Limpieza")
-        cantidad_merma = ft.TextField(
-            label="Cantidad de merma encontrada", visible=self.delivery_step == 3
+        self.cantidad_merma = ft.TextField(
+            keyboard_type=ft.KeyboardType.NUMBER,
+            label="Cantidad de merma encontrada",
+            visible=self.delivery_step == 3,
         )
-        print("Cantidad merma")
-        cantidad_entregar = ft.TextField(
-            label="Cantidad a entregar", visible=self.delivery_step == 4
+        self.cantidad_entregar = ft.TextField(
+            keyboard_type=ft.KeyboardType.NUMBER,
+            label="Cantidad a entregar",
+            visible=self.delivery_step == 4,
         )
-        print("cantidad entrega")
-        boton_tomar_evidencia = ft.ElevatedButton(
+        self.boton_tomar_evidencia = ft.ElevatedButton(
             "Tomar Foto", on_click=self.take_photo, visible=self.delivery_step == 5
         )
-        print("Boton")
 
         return ft.Column(
             [
@@ -662,11 +682,10 @@ class WorkerDashboard:
                 ],
                 ft.Container(height=20),
                 # Agregar los campos de texto según el paso actual
-                comentarios_refrigerador,
-                comentarios_limpieza,
-                cantidad_merma,
-                cantidad_entregar,
-                boton_tomar_evidencia,
+                self.comentarios_refrigerador,
+                self.comentarios_limpieza,
+                self.cantidad_merma,
+                self.cantidad_entregar,
                 ft.ElevatedButton(
                     "Continuar",
                     on_click=self.next_delivery_step,
@@ -683,70 +702,162 @@ class WorkerDashboard:
         pass
 
     def next_delivery_step(self, e):
-        print(f"next_step: {e}")
         if self.delivery_step < 6:
             if self.delivery_step == 1:  # Verificar Refrigerador
-                comments = e.comentarios_refrigerador.value
-                print(comments)
+                self.delivery_data["frezzer_comments"] = (
+                    self.comentarios_refrigerador.value
+                )
                 # db_manager.register_refrigerator_comments(customer_id, comments)
             elif self.delivery_step == 2:  # Registrar Limpieza
-                comments = e.comentarios_limpieza.value
-                print(comments)
+                self.delivery_data["cleaning_comments"] = (
+                    self.comentarios_limpieza.value
+                )
                 # db_manager.register_cleaning_comments(customer_id, comments)
             elif self.delivery_step == 3:  # Registrar Merma
-                cantidad = e.cantidad_merma.value
-                print(cantidad)
+                self.shrink_bags = self.cantidad_merma.value
                 # db_manager.register_merma(customer_id, cantidad)
             elif self.delivery_step == 4:  # Entregar Pedido
-                cantidad = e.cantidad_entregar.value
-                print(cantidad)
+                self.bags_delivered = self.cantidad_entregar.value
                 # db_manager.register_delivery_quantity(customer_id, cantidad)
             self.delivery_step += 1
             self.update_content()
         else:
             self.complete_delivery()
 
+    def _get_total_amount(self):
+        # Calcular el monto total basado en la cantidad entregada y el precio por bolsa
+        try:
+            price_per_bag = float(self.delivery_customer.get("price_sale", 0))
+            # print("\nprecio:", price_per_bag, "\nbolsas:", self.bags_delivered)
+            return int(self.bags_delivered) * price_per_bag
+        except:
+            return 0
+
+    def _get_coments(self):
+        notas = f"Notas Refrigerador: {self.delivery_data.get('frezzer_comments', 'N/A')} | Notas Limpieza: {self.delivery_data.get('cleaning_comments', 'N/A')}"
+        return notas
+
+    def _set_complete_route(self, current_route):
+        for route in self.routes:
+            if not route["id"] == current_route:
+                continue
+            route["status"] = "completed"
+            return "completed"
+
     def complete_delivery(self):
-        # Aquí se guardaría la entrega en la base de datos
-        self.show_success_message("Entrega completada exitosamente")
+        """Guardar entrega solo en local. Sin intentar red."""
+
+        sale_payload = {
+            "customer_id": self.delivery_customer["id"],
+            "worker_id": self.user["id"],
+            # "truck_id": sale_data["truck_id"],
+            "route_id": self.current_route_id,
+            "total_amount": round(self._get_total_amount()),
+            "bags_delivered": self.bags_delivered,
+            "notes": self._get_coments(),
+            "status": self._set_complete_route(current_route=self.current_route_id),
+            "delivered_at": datetime.now().isoformat(),
+        }
+        print(f"data sale: {sale_payload}")
+        # Solo local
+        db_manager.sales.append(sale_payload)
+        add_to_queue("POST", "/sales", sale_payload)
+
+        snack = ft.SnackBar(
+            content=ft.Text("Entrega guardada"), bgcolor=ft.Colors.GREEN
+        )
+
         self.delivery_customer = None
         self.delivery_step = 1
         self.show_routes()
+        self.page.overlay.append(snack)
+        snack.open = True
+        self.page.update()
+
+    def build_upload_button(self):
+        """Solo visible si los intentos automaticos fallaron"""
+        pending = get_pending_count()
+        show = is_manual_required() and pending > 0
+
+        if not show:
+            return ft.Container()  # Vacio, no se muestra
+
+        return ft.Container(
+            content=ft.ElevatedButton(
+                text=f"Subir {pending} pendiente{'s' if pending > 1 else ''}",
+                icon=ft.Icons.CLOUD_UPLOAD,
+                bgcolor=ft.Colors.ORANGE,
+                color=ft.Colors.WHITE,
+                on_click=self.manual_upload_clicked,
+            ),
+            padding=ft.padding.symmetric(horizontal=10, vertical=5),
+        )
+
+    def manual_upload_clicked(self, e):
+        """Sync manual forzado por el usuario"""
+        snack = ft.SnackBar(
+            content=ft.Text("Subiendo datos al servidor..."), bgcolor=ft.Colors.BLUE
+        )
+        self.page.overlay.append(snack)
+        snack.open = True
+        self.page.update()
+
+        def do_manual_sync():
+            result = flush_queue(is_manual=True)
+
+            snack.open = False
+
+            if result["pending"] == 0:
+                msg = f"Todos los datos subidos ({result['sent']} registros)"
+                color = ft.Colors.GREEN
+            elif result["sent"] > 0:
+                msg = f"Enviados: {result['sent']} | Pendientes: {result['pending']}"
+                color = ft.Colors.ORANGE
+            else:
+                msg = "Sin conexion. Intenta cuando tengas internet."
+                color = ft.Colors.RED
+
+            snack2 = ft.SnackBar(content=ft.Text(msg), bgcolor=color)
+            self.page.overlay.append(snack2)
+            snack2.open = True
+            self.page.update()
+
+        threading.Thread(target=do_manual_sync, daemon=True).start()
 
     def build(self):
-        # def sync_clicked(sync):
-        #     # Mostrar loading
-        #     snack = ft.SnackBar(
-        #         content=ft.Text("Sincronizando datos..."), bgcolor=ft.Colors.BLUE
-        #     )
-        #     self.page.overlay.append(snack)
-        #     snack.open = True
-        #     self.page.update()
+        def sync_clicked(sync):
+            # Mostrar loading
+            snack = ft.SnackBar(
+                content=ft.Text("Sincronizando datos..."), bgcolor=ft.Colors.BLUE
+            )
+            self.page.overlay.append(snack)
+            snack.open = True
+            self.page.update()
 
-        #     def do_sync():
-        #         result = sync_all_data()
+            def do_sync():
+                result = sync_all_data()
 
-        #         def show_result():
-        #             # Cerrar snack de carga
-        #             snack.open = False
+                def show_result():
+                    # Cerrar snack de carga
+                    snack.open = False
 
-        #             if result["success"]:
-        #                 msg = f"Datos actualizados: {', '.join(result['synced'])}"
-        #                 color = ft.Colors.GREEN
-        #             else:
-        #                 msg = f"Errores: {', '.join(result['errors'])}"
-        #                 color = ft.Colors.RED
+                    if result["success"]:
+                        msg = f"Datos actualizados: {', '.join(result['synced'])}"
+                        color = ft.Colors.GREEN
+                    else:
+                        msg = f"Errores: {', '.join(result['errors'])}"
+                        color = ft.Colors.RED
 
-        #             snack2 = ft.SnackBar(content=ft.Text(msg), bgcolor=color)
-        #             self.page.overlay.append(snack2)
-        #             snack2.open = True
-        #             self.update_content()
-        #             self.page.update()
+                    snack2 = ft.SnackBar(content=ft.Text(msg), bgcolor=color)
+                    self.page.overlay.append(snack2)
+                    snack2.open = True
+                    self.update_content()
+                    self.page.update()
 
-        #         # Llamar directamente - Flet maneja thread-safety internamente
-        #         show_result()
+                # Llamar directamente - Flet maneja thread-safety internamente
+                show_result()
 
-        #     threading.Thread(target=do_sync, daemon=True).start()
+            threading.Thread(target=do_sync, daemon=True).start()
 
         header = ft.Container(
             content=ft.Row(
@@ -754,11 +865,16 @@ class WorkerDashboard:
                     ft.Text(
                         f"Hola, {self.user['name']}", size=18, weight=ft.FontWeight.BOLD
                     ),
-                    # ft.IconButton(
-                    #     ft.Icons.SYNC,
-                    #     on_click=sync_clicked,
-                    #     tooltip="Sincronizar datos",
-                    # ),
+                    ft.IconButton(
+                        ft.Icons.CLOUD_UPLOAD,
+                        on_click=self.manual_upload_clicked,
+                        tooltip="Subir datos manualmente",
+                    ),
+                    ft.IconButton(
+                        ft.Icons.SYNC,
+                        on_click=sync_clicked,
+                        tooltip="Sincronizar datos",
+                    ),
                     ft.IconButton(
                         ft.Icons.LOGOUT,
                         on_click=lambda e: self.on_logout(),

@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # Servicio principal de la aplicación FastAPI
+  app:
+    build: .
+    container_name: delivery-manager-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/delivery_manager
+      - ENVIRONMENT=production
+    # depends_on:
+    #   - db
+    networks:
+      - delivery_network
+    restart: unless-stopped
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Base de datos PostgreSQL
+  # db:
+  #   image: postgres:15-alpine
+  #   container_name: delivery-manager-db
+  #   environment:
+  #     POSTGRES_USER: user
+  #     POSTGRES_PASSWORD: password
+  #     POSTGRES_DB: delivery_manager
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - delivery_network
+  #   ports:
+  #     - "5432:5432"
+  #   restart: unless-stopped
+
+  # Redis para cache/sesiones (opcional)
+  redis:
+    image: redis:7-alpine
+    container_name: delivery-manager-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - delivery_network
+    restart: unless-stopped
+
+  # pgAdmin para gestionar la BD (opcional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: delivery-manager-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    networks:
+      - delivery_network
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  delivery_network:
+    driver: bridge

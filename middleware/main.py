@@ -2,7 +2,6 @@
 Middleware API – Ice Delivery Manager
 Servidor FastAPI que conecta la app móvil con PostgreSQL.
 """
-
 import sys
 import os
 

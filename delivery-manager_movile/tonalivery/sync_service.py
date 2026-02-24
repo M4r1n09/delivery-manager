@@ -73,6 +73,7 @@ def sync_all_data() -> dict:
             data = resp.json()
             if data.get("success"):
                 db_manager.customers = data["data"]
+                print(f"Clientes: {data['data']}")
                 results["synced"].append(f"Clientes: {len(data['data'])}")
         else:
             results["errors"].append(f"Clientes: HTTP {resp.status_code}")
