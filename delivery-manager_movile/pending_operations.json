@@ -1,0 +1,161 @@
+[
+  {
+    "id": "1771909071.058088",
+    "operation": "POST",
+    "endpoint": "/sales",
+    "data": {
+      "customer_id": "397b8edd-7d30-4329-8fcf-0eac28401225",
+      "worker_id": "369749d2-05e4-4934-b207-86903dfb65c4",
+      "route_id": "ecdf7deb-5858-4e0f-95f8-893604d55e59",
+      "total_amount": 0,
+      "bags_delivered": 0,
+      "notes": "Notas Refrigerador:  | Notas Limpieza: ",
+      "delivered_at": "2026-02-23T22:57:51.057134"
+    },
+    "created_at": "2026-02-23T22:57:51.058088"
+  },
+  {
+    "id": "1771909627.409153",
+    "operation": "POST",
+    "endpoint": "/sales",
+    "data": {
+      "customer_id": "397b8edd-7d30-4329-8fcf-0eac28401225",
+      "worker_id": "369749d2-05e4-4934-b207-86903dfb65c4",
+      "route_id": "ecdf7deb-5858-4e0f-95f8-893604d55e59",
+      "total_amount": 0,
+      "bags_delivered": 0,
+      "notes": "Notas Refrigerador:  | Notas Limpieza: ",
+      "status": "completed",
+      "delivered_at": "2026-02-23T23:07:07.409153"
+    },
+    "created_at": "2026-02-23T23:07:07.409153"
+  },
+  {
+    "id": "1771910206.855715",
+    "operation": "POST",
+    "endpoint": "/sales",
+    "data": {
+      "customer_id": "397b8edd-7d30-4329-8fcf-0eac28401225",
+      "worker_id": "369749d2-05e4-4934-b207-86903dfb65c4",
+      "route_id": "ecdf7deb-5858-4e0f-95f8-893604d55e59",
+      "total_amount": 0,
+      "bags_delivered": 0,
+      "notes": "Notas Refrigerador:  | Notas Limpieza: ",
+      "status": "completed",
+      "delivered_at": "2026-02-23T23:16:46.853640"
+    },
+    "created_at": "2026-02-23T23:16:46.855715"
+  },
+  {
+    "id": "1771910418.050967",
+    "operation": "POST",
+    "endpoint": "/sales",
+    "data": {
+      "customer_id": "397b8edd-7d30-4329-8fcf-0eac28401225",
+      "worker_id": "369749d2-05e4-4934-b207-86903dfb65c4",
+      "route_id": "5a33faf1-b153-4ed7-81af-9e9f8769dc14",
+      "total_amount": 0,
+      "bags_delivered": 0,
+      "notes": "Notas Refrigerador:  | Notas Limpieza: ",
+      "status": "completed",
+      "delivered_at": "2026-02-23T23:20:18.048926"
+    },
+    "created_at": "2026-02-23T23:20:18.050967"
+  },
+  {
+    "id": "1771912684.854776",
+    "operation": "POST",
+    "endpoint": "/sales",
+    "data": {
+      "customer_id": "397b8edd-7d30-4329-8fcf-0eac28401225",
+      "worker_id": "369749d2-05e4-4934-b207-86903dfb65c4",
+      "route_id": "ecdf7deb-5858-4e0f-95f8-893604d55e59",
+      "total_amount": 0,
+      "bags_delivered": "6",
+      "notes": "Notas Refrigerador: ss | Notas Limpieza: ssdd",
+      "status": "completed",
+      "delivered_at": "2026-02-23T23:58:04.853772"
+    },
+    "created_at": "2026-02-23T23:58:04.854776"
+  },
+  {
+    "id": "1771912832.219794",
+    "operation": "POST",
+    "endpoint": "/sales",
+    "data": {
+      "customer_id": "397b8edd-7d30-4329-8fcf-0eac28401225",
+      "worker_id": "369749d2-05e4-4934-b207-86903dfb65c4",
+      "route_id": "5a33faf1-b153-4ed7-81af-9e9f8769dc14",
+      "total_amount": 0,
+      "bags_delivered": "9",
+      "notes": "Notas Refrigerador: fghhjjj | Notas Limpieza: kkkk8k",
+      "status": "completed",
+      "delivered_at": "2026-02-24T00:00:32.219794"
+    },
+    "created_at": "2026-02-24T00:00:32.219794"
+  },
+  {
+    "id": "1771912965.377095",
+    "operation": "POST",
+    "endpoint": "/sales",
+    "data": {
+      "customer_id": "397b8edd-7d30-4329-8fcf-0eac28401225",
+      "worker_id": "369749d2-05e4-4934-b207-86903dfb65c4",
+      "route_id": "ecdf7deb-5858-4e0f-95f8-893604d55e59",
+      "total_amount": 0,
+      "bags_delivered": "67",
+      "notes": "Notas Refrigerador: ssss | Notas Limpieza: gfgf",
+      "status": "completed",
+      "delivered_at": "2026-02-24T00:02:45.375591"
+    },
+    "created_at": "2026-02-24T00:02:45.377095"
+  },
+  {
+    "id": "1771913120.950524",
+    "operation": "POST",
+    "endpoint": "/sales",
+    "data": {
+      "customer_id": "397b8edd-7d30-4329-8fcf-0eac28401225",
+      "worker_id": "369749d2-05e4-4934-b207-86903dfb65c4",
+      "route_id": "ecdf7deb-5858-4e0f-95f8-893604d55e59",
+      "total_amount": 0,
+      "bags_delivered": "9",
+      "notes": "Notas Refrigerador: dfg | Notas Limpieza: dfgdg",
+      "status": "completed",
+      "delivered_at": "2026-02-24T00:05:20.950524"
+    },
+    "created_at": "2026-02-24T00:05:20.950524"
+  },
+  {
+    "id": "1771913291.301069",
+    "operation": "POST",
+    "endpoint": "/sales",
+    "data": {
+      "customer_id": "397b8edd-7d30-4329-8fcf-0eac28401225",
+      "worker_id": "369749d2-05e4-4934-b207-86903dfb65c4",
+      "route_id": "ecdf7deb-5858-4e0f-95f8-893604d55e59",
+      "total_amount": 47.699999999999996,
+      "bags_delivered": "9",
+      "notes": "Notas Refrigerador: sdsdf | Notas Limpieza: sdfsdf",
+      "status": "completed",
+      "delivered_at": "2026-02-24T00:08:11.301069"
+    },
+    "created_at": "2026-02-24T00:08:11.301069"
+  },
+  {
+    "id": "1771913456.91546",
+    "operation": "POST",
+    "endpoint": "/sales",
+    "data": {
+      "customer_id": "397b8edd-7d30-4329-8fcf-0eac28401225",
+      "worker_id": "369749d2-05e4-4934-b207-86903dfb65c4",
+      "route_id": "ecdf7deb-5858-4e0f-95f8-893604d55e59",
+      "total_amount": 472,
+      "bags_delivered": "89",
+      "notes": "Notas Refrigerador: ee | Notas Limpieza: gfh",
+      "status": "completed",
+      "delivered_at": "2026-02-24T00:10:56.914462"
+    },
+    "created_at": "2026-02-24T00:10:56.915460"
+  }
+]
