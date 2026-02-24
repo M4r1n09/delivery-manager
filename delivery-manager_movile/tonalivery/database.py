@@ -1,5 +1,14 @@
-import psycopg2
-from psycopg2.extras import RealDictCursor
+try:
+    import psycopg2cffi as psycopg2
+    from psycopg2cffi.extras import RealDictCursor
+    psycopg2.compat.register()
+except ImportError:
+    try:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+    except ImportError:
+        print("No se pudo importar ningún driver de PostgreSQL")
+        raise
 import os
 from typing import Dict, List, Optional
 import hashlib
@@ -122,7 +131,7 @@ class DatabaseManager:
 
         try:
             with self.connection.cursor(
-                cursor_factory=psycopg2.extras.RealDictCursor
+                cursor_factory=RealDictCursor
             ) as cursor:
                 cursor.execute(query, params)
                 if fetch:
@@ -134,7 +143,7 @@ class DatabaseManager:
             if self.ensure_connection():
                 # Retry the query after reconnection
                 with self.connection.cursor(
-                    cursor_factory=psycopg2.extras.RealDictCursor
+                    cursor_factory=RealDictCursor
                 ) as cursor:
                     cursor.execute(query, params)
                     if fetch:
@@ -1618,6 +1627,117 @@ class DatabaseManager:
             return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             print(f"❌ Error obteniendo camiones disponibles: {e}")
+            return []
+
+    def get_truck_by_worker_id(self, worker_id: str) -> Optional[Dict]:
+        """Obtiene el camión asignado a un trabajador por su ID"""
+        try:
+            cursor = self.connection.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(
+                """
+                SELECT t.id, t.license_plate, t.brand, t.model, t.year, 
+                       t.capacity_kg, t.fuel_type, t.status, t.last_maintenance, t.notes,
+                       t.created_at
+                FROM trucks t
+                WHERE t.assigned_worker_id = %s AND t.is_active = TRUE
+            """,
+                (worker_id,),
+            )
+
+            result = cursor.fetchone()
+            return dict(result) if result else None
+        except Exception as e:
+            print(f"❌ Error obteniendo camión del trabajador por ID: {e}")
+            return None
+
+    def get_worker_routes_summary(self, worker_id: str) -> Dict:
+        """Obtiene un resumen de las rutas del trabajador para el dashboard"""
+        try:
+            cursor = self.connection.cursor(cursor_factory=RealDictCursor)
+
+            # Rutas pendientes
+            cursor.execute(
+                """
+                SELECT COUNT(*) as pending_routes
+                FROM routes 
+                WHERE assigned_worker_id = %s AND status = 'pending'
+            """,
+                (worker_id,),
+            )
+            pending_routes = cursor.fetchone()["pending_routes"]
+
+            # Rutas en progreso
+            cursor.execute(
+                """
+                SELECT COUNT(*) as in_progress_routes
+                FROM routes 
+                WHERE assigned_worker_id = %s AND status = 'in_progress'
+            """,
+                (worker_id,),
+            )
+            in_progress_routes = cursor.fetchone()["in_progress_routes"]
+
+            # Entregas del día
+            cursor.execute(
+                """
+                SELECT COUNT(*) as today_deliveries
+                FROM deliveries d
+                JOIN users u ON d.worker_id = u.id
+                WHERE u.id = %s AND DATE(d.delivery_date) = CURRENT_DATE
+            """,
+                (worker_id,),
+            )
+            today_deliveries = cursor.fetchone()["today_deliveries"]
+
+            return {
+                "pending_routes": pending_routes,
+                "in_progress_routes": in_progress_routes,
+                "today_deliveries": today_deliveries,
+            }
+        except Exception as e:
+            print(f"❌ Error obteniendo resumen de rutas del trabajador: {e}")
+            return {"pending_routes": 0, "in_progress_routes": 0, "today_deliveries": 0}
+
+    def check_worker_has_truck(self, worker_id: str) -> bool:
+        """Verifica si un trabajador tiene un camión asignado"""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                """
+                SELECT COUNT(*) 
+                FROM trucks 
+                WHERE assigned_worker_id = %s AND is_active = TRUE
+            """,
+                (worker_id,),
+            )
+            count = cursor.fetchone()[0]
+            return count > 0
+        except Exception as e:
+            print(f"❌ Error verificando camión del trabajador: {e}")
+            return False
+
+    def get_delivery_history_for_worker(
+        self, worker_id: str, limit: int = 10
+    ) -> List[Dict]:
+        """Obtiene el historial de entregas de un trabajador"""
+        try:
+            cursor = self.connection.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(
+                """
+                SELECT d.id, d.bags_delivered, d.merma_bags, d.total_amount, 
+                       d.refrigerator_status, d.delivery_date,
+                       c.name as customer_name, c.address as customer_address
+                FROM deliveries d
+                JOIN customers c ON d.customer_id = c.id
+                WHERE d.worker_id = %s
+                ORDER BY d.delivery_date DESC
+                LIMIT %s
+            """,
+                (worker_id, limit),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"❌ Error obteniendo historial de entregas: {e}")
             return []
 
     ######################## CIERRE DE CONEXIÓN #####################
