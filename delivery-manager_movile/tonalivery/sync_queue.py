@@ -9,7 +9,7 @@ from datetime import datetime
 
 QUEUE_FILE = "pending_operations.json"
 SYNC_STATE_FILE = "sync_state.json"
-MIDDLEWARE_URL = os.getenv("MIDDLEWARE_URL", "http://tu-servidor:8000")
+MIDDLEWARE_URL = os.getenv("MIDDLEWARE_URL", "http://localhost:9000")
 MAX_AUTO_RETRIES = 2
 
 

@@ -2,6 +2,7 @@
 Middleware API – Ice Delivery Manager
 Servidor FastAPI que conecta la app móvil con PostgreSQL.
 """
+
 import sys
 import os
 
@@ -16,23 +17,32 @@ from config import API_HOST, API_PORT, MAX_BULK_ITEMS
 from database import db
 from models import (
     # Auth
-    LoginRequest, LoginResponse,
+    LoginRequest,
+    LoginResponse,
     # Customers
-    CustomerCreate, CustomerUpdate,
+    CustomerCreate,
+    CustomerUpdate,
     # Workers
-    WorkerCreate, WorkerUpdate,
+    WorkerCreate,
+    WorkerUpdate,
     # Routes
-    RouteCreate, RouteUpdate,
+    RouteCreate,
+    RouteUpdate,
     # Deliveries
     DeliveryCreate,
     # Sales
     SaleCreate,
     # Trucks
-    TruckCreate, TruckAssign, TruckStatusUpdate,
+    TruckCreate,
+    TruckAssign,
+    TruckStatusUpdate,
     # Fridges
-    FridgeCreate, FridgeUpdate,
+    FridgeCreate,
+    FridgeUpdate,
     # Bulk
-    BulkSyncRequest, BulkSyncResponse, BulkOperationResult,
+    BulkSyncRequest,
+    BulkSyncResponse,
+    BulkOperationResult,
     # Generic
     ApiResponse,
 )
@@ -43,7 +53,9 @@ from models import (
 async def lifespan(app: FastAPI):
     # Startup
     if not db.connect():
-        print("⚠️ No se pudo conectar a la DB al iniciar, se reintentará en cada request")
+        print(
+            "⚠️ No se pudo conectar a la DB al iniciar, se reintentará en cada request"
+        )
     yield
     # Shutdown
     db.close()
@@ -114,9 +126,13 @@ def get_customer_by_barcode(barcode: str):
 def create_customer(body: CustomerCreate):
     try:
         result = db.add_customer(
-            name=body.name, address=body.address, phone=body.phone,
-            email=body.email, price_sale=body.price_sale,
-            latitude=body.latitude, longitude=body.longitude,
+            name=body.name,
+            address=body.address,
+            phone=body.phone,
+            email=body.email,
+            price_sale=body.price_sale,
+            latitude=body.latitude,
+            longitude=body.longitude,
         )
         return ApiResponse(success=True, message="Cliente creado", data=result)
     except Exception as e:
@@ -126,9 +142,14 @@ def create_customer(body: CustomerCreate):
 @app.put("/customers/{customer_id}", tags=["Customers"])
 def update_customer(customer_id: str, body: CustomerUpdate):
     ok = db.update_customer(
-        customer_id, name=body.name, address=body.address, phone=body.phone,
-        email=body.email, price_sale=body.price_sale,
-        latitude=body.latitude, longitude=body.longitude,
+        customer_id,
+        name=body.name,
+        address=body.address,
+        phone=body.phone,
+        email=body.email,
+        price_sale=body.price_sale,
+        latitude=body.latitude,
+        longitude=body.longitude,
     )
     if not ok:
         raise HTTPException(404, "Cliente no encontrado o sin cambios")
@@ -141,6 +162,60 @@ def delete_customer(customer_id: str):
     if not ok:
         raise HTTPException(404, "Cliente no encontrado")
     return ApiResponse(success=True, message="Cliente eliminado")
+
+
+# ═══════════════════════════════════════════
+#  USER
+# ═══════════════════════════════════════════
+@app.get("/users", tags=["Workers"])
+def list_users():
+    return ApiResponse(success=True, data=db.get_users())
+
+
+@app.get("/users/{user_id}", tags=["Workers"])
+def get_user(user_id: str):
+    w = db.get_user_by_id(user_id)
+    if not w:
+        raise HTTPException(404, "Trabajador no encontrado")
+    return ApiResponse(success=True, data=w)
+
+
+@app.post("/users", tags=["Workers"])
+def create_user(body: WorkerCreate):
+    try:
+        db.add_user(
+            username=body.username,
+            name=body.name,
+            password=body.password,
+            email=body.email,
+            phone=body.phone,
+        )
+        return ApiResponse(success=True, message="Trabajador creado")
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.put("/users/{user_id}", tags=["Workers"])
+def update_user(user_id: str, body: WorkerUpdate):
+    ok = db.update_user(
+        user_id,
+        username=body.username,
+        name=body.name,
+        email=body.email,
+        phone=body.phone,
+        is_active=body.is_active,
+    )
+    if not ok:
+        raise HTTPException(404, "Trabajador no encontrado o sin cambios")
+    return ApiResponse(success=True, message="Trabajador actualizado")
+
+
+@app.delete("/users/{user_id}", tags=["Workers"])
+def delete_user(user_id: str):
+    ok = db.delete_user(user_id)
+    if not ok:
+        raise HTTPException(404, "Trabajador no encontrado")
+    return ApiResponse(success=True, message="Trabajador eliminado")
 
 
 # ═══════════════════════════════════════════
@@ -163,8 +238,11 @@ def get_worker(worker_id: str):
 def create_worker(body: WorkerCreate):
     try:
         db.add_worker(
-            username=body.username, name=body.name, password=body.password,
-            email=body.email, phone=body.phone,
+            username=body.username,
+            name=body.name,
+            password=body.password,
+            email=body.email,
+            phone=body.phone,
         )
         return ApiResponse(success=True, message="Trabajador creado")
     except Exception as e:
@@ -174,8 +252,12 @@ def create_worker(body: WorkerCreate):
 @app.put("/workers/{worker_id}", tags=["Workers"])
 def update_worker(worker_id: str, body: WorkerUpdate):
     ok = db.update_worker(
-        worker_id, username=body.username, name=body.name,
-        email=body.email, phone=body.phone, is_active=body.is_active,
+        worker_id,
+        username=body.username,
+        name=body.name,
+        email=body.email,
+        phone=body.phone,
+        is_active=body.is_active,
     )
     if not ok:
         raise HTTPException(404, "Trabajador no encontrado o sin cambios")
@@ -222,9 +304,13 @@ def get_worker_routes(worker_id: str):
 def create_route(body: RouteCreate):
     try:
         db.add_route(
-            sequence_route=body.sequence_route, name=body.name,
-            customer=body.customer, worker_assign=body.worker_assign,
-            status=body.status, bag=body.bag, description=body.description,
+            sequence_route=body.sequence_route,
+            name=body.name,
+            customer=body.customer,
+            worker_assign=body.worker_assign,
+            status=body.status,
+            bag=body.bag,
+            description=body.description,
         )
         return ApiResponse(success=True, message="Ruta creada")
     except Exception as e:
@@ -234,8 +320,11 @@ def create_route(body: RouteCreate):
 @app.put("/routes/{route_id}", tags=["Routes"])
 def update_route(route_id: str, body: RouteUpdate):
     ok = db.update_route(
-        route_id, name=body.name, description=body.description,
-        assigned_worker_id=body.assigned_worker_id, status=body.status,
+        route_id,
+        name=body.name,
+        description=body.description,
+        assigned_worker_id=body.assigned_worker_id,
+        status=body.status,
     )
     if not ok:
         raise HTTPException(404, "Ruta no encontrada o sin cambios")
@@ -288,13 +377,7 @@ def get_sales_by_period(period: str):
 
 @app.post("/sales", tags=["Sales"])
 def create_sale(body: SaleCreate):
-    ok = db.add_sale(
-        customer_id=body.customer_id,
-        worker_username=body.worker_username,
-        bags_delivered=body.bags_delivered,
-        unit_price=body.unit_price,
-        route_id=body.route_id,
-    )
+    ok = db.add_sale(data_sale=body.data_sale)
     if not ok:
         raise HTTPException(500, "Error registrando venta")
     return ApiResponse(success=True, message="Venta registrada")
@@ -325,9 +408,13 @@ def get_truck_by_worker(worker_id: str):
 def create_truck(body: TruckCreate):
     try:
         db.add_truck(
-            license_plate=body.license_plate, brand=body.brand,
-            model=body.model, year=body.year, capacity_kg=body.capacity_kg,
-            fuel_type=body.fuel_type, notes=body.notes,
+            license_plate=body.license_plate,
+            brand=body.brand,
+            model=body.model,
+            year=body.year,
+            capacity_kg=body.capacity_kg,
+            fuel_type=body.fuel_type,
+            notes=body.notes,
         )
         return ApiResponse(success=True, message="Camión registrado")
     except Exception as e:
@@ -338,7 +425,9 @@ def create_truck(body: TruckCreate):
 def assign_truck(truck_id: str, body: TruckAssign):
     ok = db.assign_truck(truck_id, body.worker_id)
     if not ok:
-        raise HTTPException(400, "No se pudo asignar el camión (ya asignado o no disponible)")
+        raise HTTPException(
+            400, "No se pudo asignar el camión (ya asignado o no disponible)"
+        )
     return ApiResponse(success=True, message="Camión asignado")
 
 
@@ -383,8 +472,11 @@ def get_fridges_by_customer(customer_id: str):
 def create_fridge(body: FridgeCreate):
     try:
         db.add_fridge(
-            customer_id=body.customer_id, name=body.name,
-            size=body.size, capacity=body.capacity, model=body.model,
+            customer_id=body.customer_id,
+            name=body.name,
+            size=body.size,
+            capacity=body.capacity,
+            model=body.model,
         )
         return ApiResponse(success=True, message="Refrigerador creado")
     except Exception as e:
@@ -394,8 +486,12 @@ def create_fridge(body: FridgeCreate):
 @app.put("/fridges/{fridge_id}", tags=["Fridges"])
 def update_fridge(fridge_id: str, body: FridgeUpdate):
     ok = db.update_fridge(
-        fridge_id, customer_id=body.customer_id, name=body.name,
-        size=body.size, capacity=body.capacity, model=body.model,
+        fridge_id,
+        customer_id=body.customer_id,
+        name=body.name,
+        size=body.size,
+        capacity=body.capacity,
+        model=body.model,
     )
     if not ok:
         raise HTTPException(404, "Refrigerador no encontrado o sin cambios")
@@ -431,9 +527,7 @@ OPERATION_MAP = {
 @app.post("/sync/bulk", response_model=BulkSyncResponse, tags=["Sync"])
 def bulk_sync(body: BulkSyncRequest):
     if len(body.operations) > MAX_BULK_ITEMS:
-        raise HTTPException(
-            400, f"Máximo {MAX_BULK_ITEMS} operaciones por lote"
-        )
+        raise HTTPException(400, f"Máximo {MAX_BULK_ITEMS} operaciones por lote")
 
     results = []
     ok_count = 0
@@ -442,32 +536,48 @@ def bulk_sync(body: BulkSyncRequest):
     for op in body.operations:
         handler = OPERATION_MAP.get(op.operation)
         if not handler:
-            results.append(BulkOperationResult(
-                client_ref=op.client_ref, operation=op.operation,
-                success=False, message=f"Operación desconocida: {op.operation}",
-            ))
+            results.append(
+                BulkOperationResult(
+                    client_ref=op.client_ref,
+                    operation=op.operation,
+                    success=False,
+                    message=f"Operación desconocida: {op.operation}",
+                )
+            )
             fail_count += 1
             continue
 
         try:
             result = handler(op.data)
             if result:
-                results.append(BulkOperationResult(
-                    client_ref=op.client_ref, operation=op.operation,
-                    success=True, message="OK",
-                ))
+                results.append(
+                    BulkOperationResult(
+                        client_ref=op.client_ref,
+                        operation=op.operation,
+                        success=True,
+                        message="OK",
+                    )
+                )
                 ok_count += 1
             else:
-                results.append(BulkOperationResult(
-                    client_ref=op.client_ref, operation=op.operation,
-                    success=False, message="La operación retornó False",
-                ))
+                results.append(
+                    BulkOperationResult(
+                        client_ref=op.client_ref,
+                        operation=op.operation,
+                        success=False,
+                        message="La operación retornó False",
+                    )
+                )
                 fail_count += 1
         except Exception as e:
-            results.append(BulkOperationResult(
-                client_ref=op.client_ref, operation=op.operation,
-                success=False, message=str(e),
-            ))
+            results.append(
+                BulkOperationResult(
+                    client_ref=op.client_ref,
+                    operation=op.operation,
+                    success=False,
+                    message=str(e),
+                )
+            )
             fail_count += 1
 
     return BulkSyncResponse(
@@ -483,6 +593,6 @@ def bulk_sync(body: BulkSyncRequest):
 # ═══════════════════════════════════════════
 if __name__ == "__main__":
     import uvicorn
+
     print(f"🚀 Iniciando middleware en {API_HOST}:{API_PORT}")
     uvicorn.run("main:app", host=API_HOST, port=API_PORT, reload=True)
-

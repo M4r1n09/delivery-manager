@@ -1,18 +1,23 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
+# Instalar uv
+ENV UV_SYSTEM=1
+RUN pip install uv
+
+# Crear directorio de trabajo
 WORKDIR /app
 
-# Copiar archivo de dependencias
-COPY requirements.txt .
+# Copiar archivos de dependencia
+COPY pyproject.toml ./
 
 # Instalar dependencias
-RUN pip install --no-cache-dir -r requirements.txt
+RUN uv sync
 
-# Copiar código de la aplicación
+# Copiar código fuente
 COPY . .
 
 # Exponer puerto
-EXPOSE 8000
+EXPOSE 9000
 
-# Comando para ejecutar la aplicación
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Comando para ejecutar
+CMD ["uv", "run", "python", "main.py"]

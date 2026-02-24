@@ -37,6 +37,23 @@ class CustomerUpdate(BaseModel):
     longitude: float = 0.0
 
 
+# ======================== USERS ========================
+class UserCreate(BaseModel):
+    username: str
+    name: str
+    password: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class UserUpdate(BaseModel):
+    username: str
+    name: str
+    email: str = ""
+    phone: str = ""
+    is_active: bool = True
+
+
 # ======================== WORKERS ========================
 class WorkerCreate(BaseModel):
     username: str
@@ -97,11 +114,7 @@ class DeliveryCreate(BaseModel):
 
 # ======================== SALES ========================
 class SaleCreate(BaseModel):
-    customer_id: str
-    worker_username: str
-    bags_delivered: int
-    unit_price: float = 15.0
-    route_id: Optional[str] = None
+    data_sale: dict
 
 
 # ======================== TRUCKS ========================
@@ -144,6 +157,7 @@ class FridgeUpdate(BaseModel):
 # ======================== BULK SYNC ========================
 class BulkOperation(BaseModel):
     """Una operación individual dentro de una carga masiva."""
+
     operation: str  # "create_delivery", "create_sale", "update_route", etc.
     data: Dict[str, Any]
     client_ref: Optional[str] = None  # Referencia del cliente para tracking
@@ -151,6 +165,7 @@ class BulkOperation(BaseModel):
 
 class BulkSyncRequest(BaseModel):
     """Request para carga masiva de datos desde la app móvil."""
+
     operations: List[BulkOperation]
     device_id: Optional[str] = None
     sync_timestamp: Optional[str] = None
@@ -158,6 +173,7 @@ class BulkSyncRequest(BaseModel):
 
 class BulkOperationResult(BaseModel):
     """Resultado de una operación individual."""
+
     client_ref: Optional[str] = None
     operation: str
     success: bool
@@ -167,6 +183,7 @@ class BulkOperationResult(BaseModel):
 
 class BulkSyncResponse(BaseModel):
     """Respuesta de la carga masiva."""
+
     total: int
     successful: int
     failed: int
@@ -178,4 +195,3 @@ class ApiResponse(BaseModel):
     success: bool
     message: str = ""
     data: Optional[Any] = None
-
