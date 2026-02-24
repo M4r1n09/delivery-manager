@@ -2,9 +2,10 @@ import flet as ft
 import os
 import sys
 from dotenv import load_dotenv
+import threading
+from sync_service import sync_all_data, sync_if_needed
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
-from database import db_manager
+from database_mobile_simplified import db_manager
 from typing import Dict, List, Optional
 from datetime import datetime
 
@@ -125,9 +126,19 @@ class WorkerDashboard:
         self.delivery_customer = None
         self.delivery_step = 1
         self.delivery_data = {}
+        print("delivery_data:", self.delivery_data)
         self.bags_to_delivered = 0
         self.bags_delivered = 0
         self.shrink_bags = 0
+        self.assigned_truck = self.get_assigned_truck()
+
+    def get_assigned_truck(self):
+        """Check if worker has an assigned truck"""
+        try:
+            truck_info = db_manager.get_worker_truck(self.user["id"])
+            return truck_info if truck_info else None
+        except:
+            return None
 
     def show_routes(self, e=None):
         self.current_view = "routes"
@@ -151,6 +162,8 @@ class WorkerDashboard:
 
         customer = db_manager.get_customer_by_barcode(barcode_value.strip())
         if customer and customer["id"] == id_customer:
+            self.close_dialog()
+            self.update_content()
             self.start_delivery_process(customer)
         else:
             self.show_error_message(
@@ -220,6 +233,7 @@ class WorkerDashboard:
             )
 
         route_cards = []
+        # print("Rutas obtenidas:", routes)
         for route in routes:
             # customers = db_manager.get_route_customers()
             print(route)
@@ -282,7 +296,7 @@ class WorkerDashboard:
                                             style=ft.ButtonStyle(
                                                 bgcolor=ft.Colors.BLUE_100
                                             ),
-                                            disabled=True,
+                                            disabled=True,  # REVISAR False
                                         ),
                                         ft.Container(width=8),
                                         ft.ElevatedButton(
@@ -361,96 +375,64 @@ class WorkerDashboard:
             self.page.overlay[-1].open = False
             self.page.overlay.pop()
             self.page.update()
+            self.update_content()
 
     def build_maps(self):
-        if not self.current_route_id:
-            return ft.Text("Selecciona una ruta primero")
-
-        customers = db_manager.get_route_customers(self.current_route_id)
-
-        return ft.Column(
+        content = ft.Column(
             [
-                ft.Row(
-                    [
-                        ft.IconButton(
-                            ft.Icons.ARROW_BACK,
-                            on_click=self.show_routes,
-                            tooltip="Volver a rutas",
-                        ),
-                        ft.Text(
-                            f"Mapa - Ruta #{self.current_route_id}",
-                            size=20,
-                            weight=ft.FontWeight.BOLD,
-                        ),
-                    ]
-                ),
-                ft.Container(height=16),
+                ft.Text("Mapa de Rutas", size=24, weight=ft.FontWeight.BOLD),
+                ft.Container(height=20),
                 ft.Container(
                     content=ft.Column(
                         [
-                            ft.Icon(ft.Icons.MAP, size=100, color=ft.Colors.BLUE_200),
-                            ft.Text(
-                                "Mapa de la ruta", size=18, weight=ft.FontWeight.BOLD
-                            ),
-                            ft.Text(
-                                "Aquí se mostraría el mapa interactivo",
-                                color=ft.Colors.GREY_600,
+                            ft.Icon(ft.Icons.MAP, size=100, color=ft.Colors.BLUE),
+                            ft.Text("Mapa interactivo de rutas"),
+                            ft.Text("(Integración con Google Maps/OpenStreetMap)"),
+                            ft.ElevatedButton(
+                                "Navegar a siguiente cliente",
+                                on_click=lambda e: None,
                             ),
                         ],
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    height=200,
-                    bgcolor=ft.Colors.BLUE_50,
-                    border_radius=12,
+                    height=400,
+                    border=ft.border.all(1, ft.Colors.GREY),
+                    border_radius=10,
                     alignment=ft.alignment.center,
                 ),
-                ft.Container(height=16),
-                ft.Text(
-                    f"Clientes en esta ruta ({len(customers)}):",
-                    size=16,
-                    weight=ft.FontWeight.BOLD,
-                ),
-                ft.Container(height=8),
-                *[
-                    ft.Card(
-                        content=ft.Container(
-                            content=ft.Row(
-                                [
-                                    ft.Icon(ft.Icons.LOCATION_ON, color=ft.Colors.RED),
-                                    ft.Column(
-                                        [
-                                            ft.Text(
-                                                customer["name"],
-                                                weight=ft.FontWeight.BOLD,
-                                            ),
-                                            ft.Text(
-                                                customer["address"],
-                                                color=ft.Colors.GREY_600,
-                                            ),
-                                        ],
-                                        spacing=2,
-                                        expand=True,
-                                    ),
-                                    ft.IconButton(
-                                        ft.Icons.PHONE,
-                                        tooltip="Llamar",
-                                        on_click=lambda e, phone=customer.get(
-                                            "phone", ""
-                                        ): print(f"Llamando a {phone}"),
-                                    ),
-                                ]
-                            ),
-                            padding=ft.padding.all(12),
-                        ),
-                        elevation=1,
-                    )
-                    for customer in customers
-                ],
-            ],
-            scroll=ft.ScrollMode.AUTO,
+            ]
         )
+        return content
 
     def build_truck_view(self):
+        if not self.assigned_truck:
+            return ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Icon(
+                            ft.Icons.LOCAL_SHIPPING, size=64, color=ft.Colors.GREY_400
+                        ),
+                        ft.Text(
+                            "No tienes un camión asignado",
+                            size=18,
+                            color=ft.Colors.GREY_600,
+                            text_align=ft.TextAlign.CENTER,
+                        ),
+                        ft.Text(
+                            "Contacta a tu supervisor para obtener asignación",
+                            size=14,
+                            color=ft.Colors.GREY_500,
+                            text_align=ft.TextAlign.CENTER,
+                        ),
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=16,
+                ),
+                padding=ft.padding.all(40),
+                alignment=ft.alignment.center,
+            )
+
+        truck = self.assigned_truck
         return ft.Column(
             [
                 ft.Text("Mi Camión", size=24, weight=ft.FontWeight.BOLD),
@@ -463,125 +445,92 @@ class WorkerDashboard:
                                     [
                                         ft.Icon(
                                             ft.Icons.LOCAL_SHIPPING,
-                                            size=40,
+                                            size=48,
                                             color=ft.Colors.BLUE,
                                         ),
+                                        ft.Container(width=16),
                                         ft.Column(
                                             [
                                                 ft.Text(
-                                                    "Camión #001",
-                                                    size=18,
+                                                    f"Camión #{truck.get('truck_number', 'N/A')}",
+                                                    size=20,
                                                     weight=ft.FontWeight.BOLD,
                                                 ),
                                                 ft.Text(
-                                                    "Estado: Operativo",
-                                                    color=ft.Colors.GREEN,
+                                                    f"Placa: {truck.get('license_plate', 'N/A')}",
+                                                    color=ft.Colors.GREY_600,
+                                                ),
+                                                ft.Text(
+                                                    f"Modelo: {truck.get('model', 'N/A')}",
+                                                    color=ft.Colors.GREY_600,
                                                 ),
                                             ],
-                                            spacing=4,
                                             expand=True,
                                         ),
-                                    ]
+                                    ],
                                 ),
                                 ft.Divider(),
                                 ft.Row(
                                     [
-                                        ft.Column(
-                                            [
-                                                ft.Text(
-                                                    "Combustible",
-                                                    weight=ft.FontWeight.BOLD,
-                                                ),
-                                                ft.ProgressBar(
-                                                    value=0.75,
-                                                    color=ft.Colors.GREEN,
-                                                    width=100,
-                                                ),
-                                                ft.Text("75%", size=12),
-                                            ],
-                                            spacing=4,
+                                        self.create_truck_info_card(
+                                            "Capacidad",
+                                            f"{truck.get('capacity', 0)} kg",
+                                            ft.Icons.SCALE,
+                                            ft.Colors.BLUE,
                                         ),
-                                        ft.Container(width=20),
-                                        ft.Column(
-                                            [
-                                                ft.Text(
-                                                    "Temperatura",
-                                                    weight=ft.FontWeight.BOLD,
-                                                ),
-                                                ft.Text(
-                                                    "-18°C",
-                                                    size=16,
-                                                    color=ft.Colors.BLUE,
-                                                ),
-                                                ft.Text(
-                                                    "Óptima",
-                                                    size=12,
-                                                    color=ft.Colors.GREEN,
-                                                ),
-                                            ],
-                                            spacing=4,
+                                        self.create_truck_info_card(
+                                            "Combustible",
+                                            f"{truck.get('fuel_level', 0)}%",
+                                            ft.Icons.LOCAL_GAS_STATION,
+                                            ft.Colors.ORANGE,
                                         ),
-                                    ]
+                                    ],
+                                ),
+                                ft.Container(height=10),
+                                ft.Row(
+                                    [
+                                        self.create_truck_info_card(
+                                            "Estado",
+                                            truck.get("status", "Desconocido"),
+                                            ft.Icons.INFO,
+                                            (
+                                                ft.Colors.GREEN
+                                                if truck.get("status") == "Operativo"
+                                                else ft.Colors.RED
+                                            ),
+                                        ),
+                                        self.create_truck_info_card(
+                                            "Kilometraje",
+                                            f"{truck.get('mileage', 0):,} km",
+                                            ft.Icons.SPEED,
+                                            ft.Colors.PURPLE,
+                                        ),
+                                    ],
                                 ),
                             ],
-                            spacing=12,
                         ),
-                        padding=ft.padding.all(16),
-                    ),
-                    elevation=2,
-                ),
-                ft.Container(height=16),
-                ft.Card(
-                    content=ft.Container(
-                        content=ft.Column(
-                            [
-                                ft.Text(
-                                    "Inventario de Hielo",
-                                    size=16,
-                                    weight=ft.FontWeight.BOLD,
-                                ),
-                                ft.Container(height=8),
-                                ft.Row(
-                                    [
-                                        ft.Icon(
-                                            ft.Icons.INVENTORY, color=ft.Colors.BLUE
-                                        ),
-                                        ft.Text(
-                                            f"Bolsas disponibles: {self.bags_to_delivered}",
-                                            expand=True,
-                                        ),
-                                    ]
-                                ),
-                                ft.Row(
-                                    [
-                                        ft.Icon(
-                                            ft.Icons.SHOPPING_BAG,
-                                            color=ft.Colors.ORANGE,
-                                        ),
-                                        ft.Text(
-                                            f"Bolsas entregadas: {self.bags_delivered}",
-                                            expand=True,
-                                        ),
-                                    ]
-                                ),
-                                ft.Row(
-                                    [
-                                        ft.Icon(ft.Icons.WARNING, color=ft.Colors.RED),
-                                        ft.Text(
-                                            f"Merma: {self.shrink_bags} bolsas",
-                                            expand=True,
-                                        ),
-                                    ]
-                                ),
-                            ],
-                            spacing=8,
-                        ),
-                        padding=ft.padding.all(16),
+                        padding=ft.padding.all(20),
                     ),
                     elevation=2,
                 ),
             ],
-            scroll=ft.ScrollMode.AUTO,
+        )
+
+    def create_truck_info_card(self, title, value, icon, color):
+        return ft.Container(
+            content=ft.Column(
+                [
+                    ft.Icon(icon, color=color, size=24),
+                    ft.Text(title, size=12, color=ft.Colors.GREY_600),
+                    ft.Text(value, size=16, weight=ft.FontWeight.BOLD),
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=4,
+            ),
+            bgcolor=ft.Colors.GREY_50,
+            border_radius=8,
+            padding=ft.padding.all(12),
+            expand=True,
         )
 
     def build_delivery_process(self):
@@ -598,27 +547,32 @@ class WorkerDashboard:
             {"title": "Tomar Evidencia", "icon": ft.Icons.CAMERA_ALT},
             {"title": "Finalizar Entrega", "icon": ft.Icons.CHECK_CIRCLE},
         ]
-
+        print("Despues de steps")
         # Contenedores para comentarios y entradas
         comentarios_refrigerador = ft.TextField(
             label="Comentarios sobre el refrigerador",
             multiline=True,
             visible=self.delivery_step == 1,
         )
+        print("Comentarios")
         comentarios_limpieza = ft.TextField(
             label="Comentarios sobre la limpieza",
             multiline=True,
             visible=self.delivery_step == 2,
         )
+        print("Limpieza")
         cantidad_merma = ft.TextField(
             label="Cantidad de merma encontrada", visible=self.delivery_step == 3
         )
+        print("Cantidad merma")
         cantidad_entregar = ft.TextField(
             label="Cantidad a entregar", visible=self.delivery_step == 4
         )
+        print("cantidad entrega")
         boton_tomar_evidencia = ft.ElevatedButton(
             "Tomar Foto", on_click=self.take_photo, visible=self.delivery_step == 5
         )
+        print("Boton")
 
         return ft.Column(
             [
@@ -719,6 +673,7 @@ class WorkerDashboard:
                     width=200,
                     style=ft.ButtonStyle(bgcolor=ft.Colors.BLUE),
                 ),
+                ft.Container(height=16),
             ],
             scroll=ft.ScrollMode.AUTO,
         )
@@ -728,6 +683,7 @@ class WorkerDashboard:
         pass
 
     def next_delivery_step(self, e):
+        print(f"next_step: {e}")
         if self.delivery_step < 6:
             if self.delivery_step == 1:  # Verificar Refrigerador
                 comments = e.comentarios_refrigerador.value
@@ -758,12 +714,51 @@ class WorkerDashboard:
         self.show_routes()
 
     def build(self):
+        # def sync_clicked(sync):
+        #     # Mostrar loading
+        #     snack = ft.SnackBar(
+        #         content=ft.Text("Sincronizando datos..."), bgcolor=ft.Colors.BLUE
+        #     )
+        #     self.page.overlay.append(snack)
+        #     snack.open = True
+        #     self.page.update()
+
+        #     def do_sync():
+        #         result = sync_all_data()
+
+        #         def show_result():
+        #             # Cerrar snack de carga
+        #             snack.open = False
+
+        #             if result["success"]:
+        #                 msg = f"Datos actualizados: {', '.join(result['synced'])}"
+        #                 color = ft.Colors.GREEN
+        #             else:
+        #                 msg = f"Errores: {', '.join(result['errors'])}"
+        #                 color = ft.Colors.RED
+
+        #             snack2 = ft.SnackBar(content=ft.Text(msg), bgcolor=color)
+        #             self.page.overlay.append(snack2)
+        #             snack2.open = True
+        #             self.update_content()
+        #             self.page.update()
+
+        #         # Llamar directamente - Flet maneja thread-safety internamente
+        #         show_result()
+
+        #     threading.Thread(target=do_sync, daemon=True).start()
+
         header = ft.Container(
             content=ft.Row(
                 [
                     ft.Text(
                         f"Hola, {self.user['name']}", size=18, weight=ft.FontWeight.BOLD
                     ),
+                    # ft.IconButton(
+                    #     ft.Icons.SYNC,
+                    #     on_click=sync_clicked,
+                    #     tooltip="Sincronizar datos",
+                    # ),
                     ft.IconButton(
                         ft.Icons.LOGOUT,
                         on_click=lambda e: self.on_logout(),
@@ -778,9 +773,7 @@ class WorkerDashboard:
 
         self.content_area = ft.Container(
             expand=True,
-            padding=ft.padding.only(
-                left=16, right=16, top=16, bottom=80
-            ),  # Added bottom padding
+            padding=ft.padding.only(left=16, right=16, top=16, bottom=80),
         )
 
         bottom_nav = ft.Container(
@@ -795,7 +788,11 @@ class WorkerDashboard:
                 on_change=lambda e: (
                     self.show_routes()
                     if e.control.selected_index == 0
-                    else (self.show_truck() if e.control.selected_index == 2 else None)
+                    else (
+                        self.show_truck()
+                        if e.control.selected_index == 2
+                        else self.show_maps()
+                    )
                 ),
             ),
             bgcolor=ft.Colors.WHITE,
@@ -806,7 +803,6 @@ class WorkerDashboard:
 
         return ft.Stack(
             [
-                # Main content
                 ft.Column(
                     [
                         header,
@@ -815,7 +811,6 @@ class WorkerDashboard:
                     expand=True,
                     spacing=0,
                 ),
-                # Fixed bottom navigation
                 ft.Container(
                     content=bottom_nav,
                     alignment=ft.alignment.bottom_center,
@@ -843,6 +838,10 @@ class AdminDashboard:
         self.current_view = "routes"
         self.update_content()
 
+    def show_workers(self, e=None):
+        self.current_view = "workers"
+        self.update_content()
+
     def show_customers(self, e=None):
         self.current_view = "customers"
         self.update_content()
@@ -856,6 +855,8 @@ class AdminDashboard:
             self.content_area.content = self.build_overview()
         elif self.current_view == "routes":
             self.content_area.content = self.build_routes()
+        elif self.current_view == "workers":
+            self.content_area.content = self.build_workers()
         elif self.current_view == "customers":
             self.content_area.content = self.build_customers()
         elif self.current_view == "sales":
@@ -931,20 +932,48 @@ class AdminDashboard:
         )
 
     def build_routes(self):
-        routes = db_manager.get_all_routes()
-
+        routes = db_manager.get_routes()
+        if not routes:
+            return ft.Column(
+                [
+                    ft.Text("Gestión de Rutas", size=24, weight=ft.FontWeight.BOLD),
+                    ft.Container(height=32),
+                    ft.Container(
+                        content=ft.Column(
+                            [
+                                ft.Icon(
+                                    ft.Icons.ROUTE,
+                                    size=64,
+                                    color=ft.Colors.GREY_400,
+                                ),
+                                ft.Text(
+                                    "No hay rutas asignadas",
+                                    size=18,
+                                    color=ft.Colors.GREY_600,
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                                ft.Text(
+                                    "Las rutas aparecerán aquí una vez que sean creadas",
+                                    size=14,
+                                    color=ft.Colors.GREY_500,
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                            ],
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=16,
+                        ),
+                        padding=ft.padding.all(40),
+                        alignment=ft.alignment.center,
+                    ),
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            )
         return ft.Column(
             [
                 ft.Row(
                     [
                         ft.Text("Gestión de Rutas", size=24, weight=ft.FontWeight.BOLD),
                         ft.Container(expand=True),
-                        ft.ElevatedButton(
-                            "Nueva Ruta",
-                            icon=ft.Icons.ADD,
-                            on_click=self.create_new_route,
-                            style=ft.ButtonStyle(bgcolor=ft.Colors.BLUE),
-                        ),
                     ]
                 ),
                 ft.Container(height=16),
@@ -967,18 +996,24 @@ class AdminDashboard:
                                                 f"Estado: {route['status']}",
                                                 color=ft.Colors.GREY_600,
                                             ),
+                                            ft.Text(
+                                                f"Cliente: {route.get('customer_name', 'N/A')}",
+                                                color=ft.Colors.GREY_600,
+                                            ),
+                                            ft.Text(
+                                                f"Fecha: {route.get('created_at', 'N/A')}",
+                                                color=ft.Colors.GREY_600,
+                                            ),
                                         ],
                                         expand=True,
                                     ),
-                                    ft.Column(
-                                        [
-                                            ft.IconButton(
-                                                ft.Icons.EDIT, tooltip="Editar"
-                                            ),
-                                            ft.IconButton(
-                                                ft.Icons.DELETE, tooltip="Eliminar"
-                                            ),
-                                        ]
+                                    ft.Container(
+                                        content=ft.Icon(
+                                            ft.Icons.VISIBILITY,
+                                            color=ft.Colors.GREY_400,
+                                            tooltip="Solo lectura",
+                                        ),
+                                        padding=ft.padding.all(8),
                                     ),
                                 ]
                             ),
@@ -992,12 +1027,44 @@ class AdminDashboard:
             scroll=ft.ScrollMode.AUTO,
         )
 
-    def create_new_route(self, e):
-        # Implementar creación de nueva ruta
-        self.show_success_message("Funcionalidad en desarrollo")
-
     def build_customers(self):
-        customers = db_manager.get_all_customers()
+        customers = db_manager.get_customers()
+
+        if not customers:
+            return ft.Column(
+                [
+                    ft.Text("Gestión de Clientes", size=24, weight=ft.FontWeight.BOLD),
+                    ft.Container(height=32),
+                    ft.Container(
+                        content=ft.Column(
+                            [
+                                ft.Icon(
+                                    ft.Icons.PERSON_OFF,
+                                    size=64,
+                                    color=ft.Colors.GREY_400,
+                                ),
+                                ft.Text(
+                                    "No hay clientes registrados",
+                                    size=18,
+                                    color=ft.Colors.GREY_600,
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                                ft.Text(
+                                    "Los clientes aparecerán aquí una vez que sean registrados",
+                                    size=14,
+                                    color=ft.Colors.GREY_500,
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                            ],
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=16,
+                        ),
+                        padding=ft.padding.all(40),
+                        alignment=ft.alignment.center,
+                    ),
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            )
 
         return ft.Column(
             [
@@ -1007,12 +1074,6 @@ class AdminDashboard:
                             "Gestión de Clientes", size=24, weight=ft.FontWeight.BOLD
                         ),
                         ft.Container(expand=True),
-                        ft.ElevatedButton(
-                            "Nuevo Cliente",
-                            icon=ft.Icons.PERSON_ADD,
-                            on_click=self.create_new_customer,
-                            style=ft.ButtonStyle(bgcolor=ft.Colors.GREEN),
-                        ),
                     ]
                 ),
                 ft.Container(height=16),
@@ -1036,19 +1097,21 @@ class AdminDashboard:
                                                 f"Teléfono: {customer.get('phone', 'N/A')}",
                                                 color=ft.Colors.GREY_600,
                                             ),
+                                            ft.Text(
+                                                f"Código: {customer.get('barcode', 'N/A')}",
+                                                color=ft.Colors.GREY_600,
+                                            ),
                                         ],
                                         expand=True,
                                         spacing=2,
                                     ),
-                                    ft.Column(
-                                        [
-                                            ft.IconButton(
-                                                ft.Icons.EDIT, tooltip="Editar"
-                                            ),
-                                            ft.IconButton(
-                                                ft.Icons.DELETE, tooltip="Eliminar"
-                                            ),
-                                        ]
+                                    ft.Container(
+                                        content=ft.Icon(
+                                            ft.Icons.VISIBILITY,
+                                            color=ft.Colors.GREY_400,
+                                            tooltip="Solo lectura",
+                                        ),
+                                        padding=ft.padding.all(8),
                                     ),
                                 ]
                             ),
@@ -1062,12 +1125,44 @@ class AdminDashboard:
             scroll=ft.ScrollMode.AUTO,
         )
 
-    def create_new_customer(self, e):
-        # Implementar creación de nuevo cliente
-        self.show_success_message("Funcionalidad en desarrollo")
-
     def build_sales(self):
-        sales = db_manager.get_recent_sales()
+        sales = db_manager.get_sales()
+
+        if not sales:
+            return ft.Column(
+                [
+                    ft.Text("Reporte de Ventas", size=24, weight=ft.FontWeight.BOLD),
+                    ft.Container(height=32),
+                    ft.Container(
+                        content=ft.Column(
+                            [
+                                ft.Icon(
+                                    ft.Icons.SHOPPING_CART_OUTLINED,
+                                    size=64,
+                                    color=ft.Colors.GREY_400,
+                                ),
+                                ft.Text(
+                                    "No hay ventas registradas",
+                                    size=18,
+                                    color=ft.Colors.GREY_600,
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                                ft.Text(
+                                    "Las ventas aparecerán aquí una vez que se realicen entregas",
+                                    size=14,
+                                    color=ft.Colors.GREY_500,
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                            ],
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=16,
+                        ),
+                        padding=ft.padding.all(40),
+                        alignment=ft.alignment.center,
+                    ),
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            )
 
         return ft.Column(
             [
@@ -1086,19 +1181,27 @@ class AdminDashboard:
                                 ft.Row(
                                     [
                                         ft.Text("Ventas totales:", expand=True),
-                                        ft.Text("$1,250.00", weight=ft.FontWeight.BOLD),
+                                        ft.Text(
+                                            f"${sum(sale.get('amount', 0) for sale in sales):.2f}",
+                                            weight=ft.FontWeight.BOLD,
+                                        ),
                                     ]
                                 ),
                                 ft.Row(
                                     [
                                         ft.Text("Bolsas vendidas:", expand=True),
-                                        ft.Text("45", weight=ft.FontWeight.BOLD),
+                                        ft.Text(
+                                            f"{sum(sale.get('quantity', 0) for sale in sales)}",
+                                            weight=ft.FontWeight.BOLD,
+                                        ),
                                     ]
                                 ),
                                 ft.Row(
                                     [
                                         ft.Text("Clientes atendidos:", expand=True),
-                                        ft.Text("12", weight=ft.FontWeight.BOLD),
+                                        ft.Text(
+                                            f"{len(sales)}", weight=ft.FontWeight.BOLD
+                                        ),
                                     ]
                                 ),
                             ],
@@ -1151,6 +1254,106 @@ class AdminDashboard:
             scroll=ft.ScrollMode.AUTO,
         )
 
+    def build_workers(self):
+        workers = db_manager.get_workers()
+        if not workers:
+            return ft.Column(
+                [
+                    ft.Text(
+                        "Gestión de Trabajadores", size=24, weight=ft.FontWeight.BOLD
+                    ),
+                    ft.Container(height=32),
+                    ft.Container(
+                        content=ft.Column(
+                            [
+                                ft.Icon(
+                                    ft.Icons.WORK_OFF,
+                                    size=64,
+                                    color=ft.Colors.GREY_400,
+                                ),
+                                ft.Text(
+                                    "No hay trabajadores registrados",
+                                    size=18,
+                                    color=ft.Colors.GREY_600,
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                                ft.Text(
+                                    "Los trabajadores aparecerán aquí una vez que sean registrados",
+                                    size=14,
+                                    color=ft.Colors.GREY_500,
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                            ],
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=16,
+                        ),
+                        padding=ft.padding.all(40),
+                        alignment=ft.alignment.center,
+                    ),
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            )
+        return ft.Column(
+            [
+                ft.Row(
+                    [
+                        ft.Text(
+                            "Gestión de Trabajadores",
+                            size=24,
+                            weight=ft.FontWeight.BOLD,
+                        ),
+                        ft.Container(expand=True),
+                    ]
+                ),
+                ft.Container(height=16),
+                *[
+                    ft.Card(
+                        content=ft.Container(
+                            content=ft.Row(
+                                [
+                                    ft.Icon(ft.Icons.WORK, color=ft.Colors.GREEN),
+                                    ft.Column(
+                                        [
+                                            ft.Text(
+                                                worker["name"],
+                                                weight=ft.FontWeight.BOLD,
+                                            ),
+                                            ft.Text(
+                                                f"Email: {worker.get('email', 'N/A')}",
+                                                color=ft.Colors.GREY_600,
+                                            ),
+                                            ft.Text(
+                                                f"Teléfono: {worker.get('phone', 'N/A')}",
+                                                color=ft.Colors.GREY_600,
+                                            ),
+                                            ft.Text(
+                                                f"Rol: {worker.get('role', 'N/A')}",
+                                                color=ft.Colors.GREY_600,
+                                            ),
+                                        ],
+                                        expand=True,
+                                        spacing=2,
+                                    ),
+                                    ft.Container(
+                                        content=ft.Icon(
+                                            ft.Icons.VISIBILITY,
+                                            color=ft.Colors.GREY_400,
+                                            tooltip="Solo lectura",
+                                        ),
+                                        padding=ft.padding.all(8),
+                                    ),
+                                ]
+                            ),
+                            padding=ft.padding.all(16),
+                        ),
+                        elevation=1,
+                    )
+                    for worker in workers
+                ],
+            ],
+            scroll=ft.ScrollMode.AUTO,
+        )
+
     def show_success_message(self, message):
         snack_bar = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.GREEN)
         self.page.overlay.append(snack_bar)
@@ -1192,6 +1395,9 @@ class AdminDashboard:
                         icon=ft.Icons.DASHBOARD, label="Dashboard"
                     ),
                     ft.NavigationBarDestination(icon=ft.Icons.ROUTE, label="Rutas"),
+                    ft.NavigationBarDestination(
+                        icon=ft.Icons.WORK, label="Trabajadores"
+                    ),
                     ft.NavigationBarDestination(icon=ft.Icons.PEOPLE, label="Clientes"),
                     ft.NavigationBarDestination(
                         icon=ft.Icons.SHOPPING_CART, label="Ventas"
@@ -1216,7 +1422,6 @@ class AdminDashboard:
                     expand=True,
                     spacing=0,
                 ),
-                # Fixed bottom navigation
                 ft.Container(
                     content=bottom_nav,
                     alignment=ft.alignment.bottom_center,
@@ -1235,8 +1440,10 @@ class AdminDashboard:
         elif selected_index == 1:
             self.show_routes()
         elif selected_index == 2:
-            self.show_customers()
+            self.show_workers()
         elif selected_index == 3:
+            self.show_customers()
+        elif selected_index == 4:
             self.show_sales()
 
 
@@ -1287,6 +1494,17 @@ def main(page: ft.Page):
     page.adaptive = True
     page.theme_mode = ft.ThemeMode.LIGHT
     app = IceDeliveryApp(page)
+
+    # === SYNC AUTOMATICA AL INICIAR ===
+    def auto_sync():
+        result = sync_if_needed()
+        if result:
+            print(f"Sync automatica: {result}")
+            # Actualizar UI si es necesario
+            page.update()
+
+    # Ejecutar sync en background para no bloquear la UI
+    threading.Thread(target=auto_sync, daemon=True).start()
 
 
 if __name__ == "__main__":
